@@ -14,10 +14,14 @@ class SupabaseConfig {
   static const String supabaseUrl = 'https://rqhtabgmltxrrjkbdclv.supabase.co';
 
   /// Your Supabase Public Anonymous API Key (anon / public key)
-  static const String supabaseAnonKey = 'sb_publishable_wnuagRRdcBx3svBb5O42OQ_3ZPb8A3n';
+  static const String supabaseAnonKey =
+      'sb_publishable_wnuagRRdcBx3svBb5O42OQ_3ZPb8A3n';
 
   /// Supabase Storage Bucket for print documents (PDF, DOCX, PPT, JPG, PNG up to 50MB)
   static const String documentsBucket = 'xerox-documents';
+
+  /// Supabase Storage Bucket for active shopkeeper payment QR codes
+  static const String paymentQrBucket = 'payment_qr';
 
   /// Maximum file size supported for student uploads (50 MB in bytes)
   static const int maxFileSizeBytes = 50 * 1024 * 1024; // 52,428,800 bytes

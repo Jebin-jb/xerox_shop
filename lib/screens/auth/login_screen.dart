@@ -51,13 +51,6 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  void _quickFillShopkeeper() {
-    setState(() {
-      email.text = 'shopkeeper@college.ac.in';
-      password.text = 'Shop@12345';
-    });
-  }
-
   void _show(String s) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
@@ -99,18 +92,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 28),
                         Text(
                           'Campus Xerox',
-                          style: Theme.of(context)
-                              .textTheme
-                              .displaySmall
+                          style: Theme.of(context).textTheme.displaySmall
                               ?.copyWith(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           'Print smarter. Skip the counter queue.',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                         ),
                         const SizedBox(height: 24),
@@ -119,10 +111,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withValues(alpha: 0.08),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Column(
@@ -143,14 +134,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                 runSpacing: 8,
                                 children: [
                                   ActionChip(
-                                    avatar: const Icon(Icons.school_rounded, size: 16),
+                                    avatar: const Icon(
+                                      Icons.school_rounded,
+                                      size: 16,
+                                    ),
                                     label: const Text('Student Demo'),
                                     onPressed: _quickFillStudent,
-                                  ),
-                                  ActionChip(
-                                    avatar: const Icon(Icons.storefront_rounded, size: 16),
-                                    label: const Text('Shopkeeper Demo'),
-                                    onPressed: _quickFillShopkeeper,
                                   ),
                                 ],
                               ),
@@ -178,7 +167,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             labelText: 'Password',
                             prefixIcon: const Icon(Icons.lock_outline_rounded),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(() => obscure = !obscure),
+                              onPressed: () =>
+                                  setState(() => obscure = !obscure),
                               icon: Icon(
                                 obscure
                                     ? Icons.visibility_rounded
@@ -207,9 +197,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               }
                               try {
                                 await widget.auth.sendPasswordReset(email.text);
-                                _show('Password reset link sent to your college inbox.');
+                                _show(
+                                  'Password reset link sent to your college inbox.',
+                                );
                               } catch (e) {
-                                _show(e.toString().replaceFirst('Exception: ', ''));
+                                _show(
+                                  e.toString().replaceFirst('Exception: ', ''),
+                                );
                               }
                             },
                             child: const Text('Forgot password?'),

@@ -35,7 +35,9 @@ class StorageService {
     final data = bytes ?? Uint8List(0);
     if (data.length > maxFileSizeBytes) {
       final sizeMB = (data.length / (1024 * 1024)).toStringAsFixed(1);
-      throw Exception('File size ($sizeMB MB) exceeds the maximum 50 MB limit.');
+      throw Exception(
+        'File size ($sizeMB MB) exceeds the maximum 50 MB limit.',
+      );
     }
 
     final safeName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
@@ -49,14 +51,13 @@ class StorageService {
         final mimeType = _getMimeType(fileName);
 
         onProgress?.call(0.3);
-        await client.storage.from(SupabaseConfig.documentsBucket).uploadBinary(
-          storagePath,
-          data,
-          fileOptions: FileOptions(
-            contentType: mimeType,
-            upsert: true,
-          ),
-        );
+        await client.storage
+            .from(SupabaseConfig.documentsBucket)
+            .uploadBinary(
+              storagePath,
+              data,
+              fileOptions: FileOptions(contentType: mimeType, upsert: true),
+            );
         // Generate clean public URL for instant previewing and downloading
         final publicUrl = client.storage
             .from(SupabaseConfig.documentsBucket)
@@ -80,6 +81,78 @@ class StorageService {
     _cloudVault[storagePath] = data;
     onProgress?.call(1.0);
     return fileUrl;
+  }
+
+  /// Uploads Shopkeeper Payment QR Code into Supabase Storage `payment_qr` bucket.
+  /// Appends a timestamp cache-busting query to avoid stale image caching on phones.
+  Future<String> uploadPaymentQr({
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    if (bytes.isEmpty) {
+      throw Exception('QR image file is empty.');
+    }
+
+    final ext = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : 'png';
+    final mimeType = ext == 'png'
+        ? 'image/png'
+        : (ext == 'jpg' || ext == 'jpeg' ? 'image/jpeg' : 'image/png');
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final storagePath = 'shop_qr_$timestamp.$ext';
+
+    if (isSupabaseLive) {
+      try {
+        final client = Supabase.instance.client;
+        await client.storage
+            .from(SupabaseConfig.paymentQrBucket)
+            .uploadBinary(
+              storagePath,
+              bytes,
+              fileOptions: FileOptions(contentType: mimeType, upsert: true),
+            );
+
+        final rawUrl = client.storage
+            .from(SupabaseConfig.paymentQrBucket)
+            .getPublicUrl(storagePath);
+        final publicUrl = '$rawUrl?t=$timestamp';
+        _cloudVault[publicUrl] = bytes;
+        _cloudVault[rawUrl] = bytes;
+        _cloudVault[storagePath] = bytes;
+        return publicUrl;
+      } catch (e) {
+        debugPrint(
+          'Supabase uploadPaymentQr notice (falling back to document bucket): $e',
+        );
+        try {
+          final client = Supabase.instance.client;
+          final fallbackPath = 'payment_qr/qr_$timestamp.$ext';
+          await client.storage
+              .from(SupabaseConfig.documentsBucket)
+              .uploadBinary(
+                fallbackPath,
+                bytes,
+                fileOptions: FileOptions(contentType: mimeType, upsert: true),
+              );
+          final rawUrl = client.storage
+              .from(SupabaseConfig.documentsBucket)
+              .getPublicUrl(fallbackPath);
+          final publicUrl = '$rawUrl?t=$timestamp';
+          _cloudVault[publicUrl] = bytes;
+          _cloudVault[rawUrl] = bytes;
+          return publicUrl;
+        } catch (err2) {
+          debugPrint('Fallback document bucket QR upload notice: $err2');
+        }
+      }
+    }
+
+    // Fallback data URI for local offline demo
+    final base64String = base64Encode(bytes);
+    final dataUri = 'data:$mimeType;base64,$base64String';
+    _cloudVault[dataUri] = bytes;
+    return dataUri;
   }
 
   /// Download or retrieve bytes for printing/previewing
@@ -173,7 +246,9 @@ class StorageService {
             targetDir = androidDownload;
           }
         }
-        targetDir ??= await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+        targetDir ??=
+            await getDownloadsDirectory() ??
+            await getApplicationDocumentsDirectory();
       }
 
       if (targetDir == null) return null;
@@ -211,7 +286,9 @@ class StorageService {
       try {
         final docDir = await getApplicationDocumentsDirectory();
         final safeName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-        final vaultFile = File('${docDir.path}/app_print_vault/${orderId}_$safeName');
+        final vaultFile = File(
+          '${docDir.path}/app_print_vault/${orderId}_$safeName',
+        );
         if (await vaultFile.exists()) {
           await vaultFile.delete();
           debugPrint('Erased from app vault: ${vaultFile.path}');
@@ -227,7 +304,9 @@ class StorageService {
         final safeName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
         final prefix = orderCode != null ? '${orderCode}_' : '';
         if (Platform.isAndroid) {
-          final downloadFile = File('/storage/emulated/0/Download/$prefix$safeName');
+          final downloadFile = File(
+            '/storage/emulated/0/Download/$prefix$safeName',
+          );
           if (await downloadFile.exists()) {
             await downloadFile.delete();
             debugPrint('Erased from Android Downloads: ${downloadFile.path}');
@@ -242,10 +321,12 @@ class StorageService {
     if (isSupabaseLive && fileUrl.startsWith('http') && relativePath != null) {
       try {
         final client = Supabase.instance.client;
-        await client.storage
-            .from(SupabaseConfig.documentsBucket)
-            .remove([relativePath]);
-        debugPrint('Securely erased from Supabase Cloud Storage: $relativePath');
+        await client.storage.from(SupabaseConfig.documentsBucket).remove([
+          relativePath,
+        ]);
+        debugPrint(
+          'Securely erased from Supabase Cloud Storage: $relativePath',
+        );
       } catch (e) {
         debugPrint('Error erasing from Supabase storage: $e');
       }
@@ -263,9 +344,9 @@ class StorageService {
     if (isSupabaseLive && fileUrl.startsWith('http') && relativePath != null) {
       try {
         final client = Supabase.instance.client;
-        await client.storage
-            .from(SupabaseConfig.documentsBucket)
-            .remove([relativePath]);
+        await client.storage.from(SupabaseConfig.documentsBucket).remove([
+          relativePath,
+        ]);
         debugPrint('Securely erased file from Supabase Storage: $relativePath');
         return true;
       } catch (e) {
@@ -281,7 +362,9 @@ class StorageService {
       if (fileUrl.startsWith('http')) {
         final uri = Uri.parse(fileUrl);
         final pathSegments = uri.pathSegments;
-        final bucketIndex = pathSegments.indexOf(SupabaseConfig.documentsBucket);
+        final bucketIndex = pathSegments.indexOf(
+          SupabaseConfig.documentsBucket,
+        );
         if (bucketIndex != -1 && bucketIndex < pathSegments.length - 1) {
           return pathSegments.sublist(bucketIndex + 1).join('/');
         }
@@ -291,7 +374,8 @@ class StorageService {
   }
 
   bool isAvailable(String fileUrl) =>
-      _cloudVault.containsKey(fileUrl) || (isSupabaseLive && fileUrl.startsWith('http'));
+      _cloudVault.containsKey(fileUrl) ||
+      (isSupabaseLive && fileUrl.startsWith('http'));
 
   static String _getMimeType(String fileName) {
     final lower = fileName.toLowerCase();

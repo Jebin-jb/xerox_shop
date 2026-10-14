@@ -66,7 +66,9 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
           SnackBar(
             backgroundColor: Colors.teal[800],
             content: Text(
-              path != null ? 'Saved to: $path' : 'Saved to device Downloads folder.',
+              path != null
+                  ? 'Saved to: $path'
+                  : 'Saved to device Downloads folder.',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
@@ -80,7 +82,8 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
   @override
   Widget build(BuildContext context) {
     final o = widget.order;
-    final isImage = o.fileName.toLowerCase().endsWith('.jpg') ||
+    final isImage =
+        o.fileName.toLowerCase().endsWith('.jpg') ||
         o.fileName.toLowerCase().endsWith('.jpeg') ||
         o.fileName.toLowerCase().endsWith('.png') ||
         o.fileName.toLowerCase().endsWith('.webp');
@@ -108,7 +111,11 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      isPdf ? Icons.picture_as_pdf_rounded : (isImage ? Icons.image_rounded : Icons.description_rounded),
+                      isPdf
+                          ? Icons.picture_as_pdf_rounded
+                          : (isImage
+                                ? Icons.image_rounded
+                                : Icons.description_rounded),
                       color: AppTheme.primary,
                       size: 24,
                     ),
@@ -122,13 +129,18 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
                           o.fileName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15.5,
+                          ),
                         ),
                         Text(
                           'Code: #${o.code} • ${o.studentName}',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -151,7 +163,9 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
                     color: Theme.of(context).cardColor.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                      color: Theme.of(
+                        context,
+                      ).dividerColor.withValues(alpha: 0.2),
                     ),
                   ),
                   child: ClipRRect(
@@ -168,13 +182,95 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  _specBadge('${o.pages} Pages × ${o.copies} ${o.copies == 1 ? "Copy" : "Copies"}'),
+                  _specBadge(
+                    '${o.pages} Pages × ${o.copies} ${o.copies == 1 ? "Copy" : "Copies"}',
+                  ),
                   _specBadge(o.color ? 'Color Print' : 'B&W Print'),
                   _specBadge(o.doubleSided ? 'Double-Sided' : 'Single-Sided'),
-                  _specBadge(o.paperType.name),
-                  if (o.bindingType != BindingType.none) _specBadge(o.bindingType.name),
+                  _specBadge(
+                    o.paperTypeName.isNotEmpty
+                        ? o.paperTypeName
+                        : o.paperType.name,
+                  ),
+                  if (o.gsmName.isNotEmpty) _specBadge(o.gsmName),
+                  if (o.bindingName.isNotEmpty &&
+                      o.bindingName.toLowerCase() != 'none')
+                    _specBadge(o.bindingName)
+                  else if (o.bindingType != BindingType.none)
+                    _specBadge(o.bindingType.name),
                   if (o.lamination) _specBadge('Lamination'),
                 ],
+              ),
+
+              const SizedBox(height: 10),
+
+              // Special Instructions
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: o.specialInstructions.trim().isNotEmpty
+                      ? Colors.amber.withValues(alpha: 0.12)
+                      : Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: o.specialInstructions.trim().isNotEmpty
+                        ? Colors.amber.withValues(alpha: 0.45)
+                        : Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.notes_rounded,
+                          size: 14,
+                          color: o.specialInstructions.trim().isNotEmpty
+                              ? Colors.amber[800]
+                              : Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          'Special Instructions',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                            letterSpacing: 0.3,
+                            color: o.specialInstructions.trim().isNotEmpty
+                                ? Colors.amber[900]
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      o.specialInstructions.trim().isNotEmpty
+                          ? o.specialInstructions.trim()
+                          : 'No special instructions.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: o.specialInstructions.trim().isNotEmpty
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        fontStyle: o.specialInstructions.trim().isNotEmpty
+                            ? FontStyle.normal
+                            : FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
               ),
 
               const SizedBox(height: 18),
@@ -225,7 +321,10 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 12),
-            Text('Loading file from secure in-app vault…', style: TextStyle(fontSize: 12.5)),
+            Text(
+              'Loading file from secure in-app vault…',
+              style: TextStyle(fontSize: 12.5),
+            ),
           ],
         ),
       );
@@ -283,13 +382,19 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 14.5,
+              ),
             ),
             if (fileSizeKb != null) ...[
               const SizedBox(height: 4),
               Text(
                 '$fileSizeKb KB • Ready for Xerox',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
             const SizedBox(height: 12),
@@ -322,9 +427,15 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
             FilledButton.tonalIcon(
               onPressed: _savingToDevice ? null : _exportToDevice,
               icon: _savingToDevice
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.download_for_offline_rounded, size: 18),
-              label: Text(_savingToDevice ? 'Exporting…' : 'Save Copy to Downloads'),
+              label: Text(
+                _savingToDevice ? 'Exporting…' : 'Save Copy to Downloads',
+              ),
             ),
           ],
         ),
@@ -333,14 +444,14 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
   }
 
   Widget _specBadge(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          text,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      text,
+      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+    ),
+  );
 }

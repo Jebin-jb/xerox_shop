@@ -29,7 +29,10 @@ class PortalSelectionScreen extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 540),
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -84,7 +87,8 @@ class PortalSelectionScreen extends StatelessWidget {
                       _portalCard(
                         context: context,
                         title: 'Student Portal',
-                        subtitle: 'Upload documents up to 50MB, check live rates & pickup orders.',
+                        subtitle:
+                            'Upload documents up to 50MB, check live rates & pickup orders.',
                         icon: Icons.school_rounded,
                         color: AppTheme.primary,
                         buttonLabel: 'Enter Student Portal',
@@ -101,14 +105,15 @@ class PortalSelectionScreen extends StatelessWidget {
 
                       const SizedBox(height: 16),
 
-                      // 2. Shopkeeper Admin Card
+                      // 2. Shopkeeper Portal Card
                       _portalCard(
                         context: context,
-                        title: 'Shopkeeper Admin',
-                        subtitle: 'Manage live print queue, download documents & update prices.',
+                        title: 'Shopkeeper Portal',
+                        subtitle:
+                            'Manage live print queue, download documents & update prices.',
                         icon: Icons.storefront_rounded,
                         color: const Color(0xFF00A2FF),
-                        buttonLabel: 'Enter Admin Portal',
+                        buttonLabel: 'Enter Shopkeeper Portal',
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -138,64 +143,66 @@ class PortalSelectionScreen extends StatelessWidget {
     required Color color,
     required String buttonLabel,
     required VoidCallback onTap,
-  }) =>
-      FadeSlide(
-        child: GlassPanel(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  }) => FadeSlide(
+    child: GlassPanel(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(icon, color: color, size: 24),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.4,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(14),
                 ),
+                child: Icon(icon, color: color, size: 24),
               ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: color,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(0, 46),
-                  ),
-                  onPressed: onTap,
-                  icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-                  label: Text(
-                    buttonLabel,
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
                   ),
                 ),
               ),
             ],
           ),
-        ),
-      );
+          const SizedBox(height: 10),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(0, 46),
+              ),
+              onPressed: onTap,
+              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+              label: Text(
+                buttonLabel,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

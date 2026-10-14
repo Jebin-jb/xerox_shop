@@ -23,7 +23,8 @@ class AuthService {
   }
 
   final _authController = StreamController<AppUser?>.broadcast();
-  final _profileController = StreamController<Map<String, UserProfile>>.broadcast();
+  final _profileController =
+      StreamController<Map<String, UserProfile>>.broadcast();
   final _initCompleter = Completer<void>();
 
   AppUser? _currentUser;
@@ -75,7 +76,10 @@ class AuthService {
         final Map<String, dynamic> decoded = jsonDecode(profilesJson);
         decoded.forEach((key, value) {
           if (value is Map) {
-            _profiles[key] = UserProfile.fromMap(key, Map<String, dynamic>.from(value));
+            _profiles[key] = UserProfile.fromMap(
+              key,
+              Map<String, dynamic>.from(value),
+            );
           }
         });
       }
@@ -122,18 +126,23 @@ class AuthService {
     final email = prefs.getString('session_email');
     final uid = prefs.getString('session_uid');
     if (email != null && uid != null) {
+      final isShop =
+          uid.contains('shopkeeper') ||
+          uid.contains('admin') ||
+          email.contains('shopkeeper') ||
+          email.contains('xeroxshop') ||
+          email.contains('admin');
+
       if (!_profiles.containsKey(uid)) {
-        final isShop = uid.contains('shopkeeper') ||
-            uid.contains('admin') ||
-            email.contains('shopkeeper') ||
-            email.contains('admin');
         _profiles[uid] = UserProfile(
           id: uid,
-          name: isShop ? 'Campus Xerox Admin' : 'Mock Student',
+          name: isShop ? 'Campus Xerox' : 'Mock Student',
           email: email,
           role: isShop ? 'shopkeeper' : 'student',
           studentId: isShop ? '' : 'MOCK2026',
         );
+      } else if (_profiles[uid]!.role == 'admin') {
+        _profiles[uid] = _profiles[uid]!.copyWith(role: 'shopkeeper');
       }
       _currentUser = AppUser(uid: uid, email: email);
       _authController.add(_currentUser);
@@ -147,7 +156,9 @@ class AuthService {
     if (!_initialized) await isReady;
     final normalized = email.trim().toLowerCase();
     if (!isCollegeEmail(normalized)) {
-      throw AuthException('Use your official college email ending in @${AppConfig.collegeEmailDomain}.');
+      throw AuthException(
+        'Use your official college email ending in @${AppConfig.collegeEmailDomain}.',
+      );
     }
 
     // Direct match for mock & demo accounts
@@ -171,7 +182,8 @@ class AuthService {
         );
         if (res.user != null) {
           final uid = res.user!.id;
-          final userProfile = _profiles[uid] ??
+          final userProfile =
+              _profiles[uid] ??
               UserProfile(
                 id: uid,
                 name: res.user!.userMetadata?['name'] ?? 'College Student',
@@ -194,7 +206,9 @@ class AuthService {
     }
 
     if (account == null || account['password'] != password) {
-      throw AuthException('Invalid email or password. Please check your credentials.');
+      throw AuthException(
+        'Invalid email or password. Please check your credentials.',
+      );
     }
   }
 
@@ -207,7 +221,9 @@ class AuthService {
     if (!_initialized) await isReady;
     final normalized = email.trim().toLowerCase();
     if (!isCollegeEmail(normalized)) {
-      throw AuthException('Registration is restricted to official @${AppConfig.collegeEmailDomain} emails.');
+      throw AuthException(
+        'Registration is restricted to official @${AppConfig.collegeEmailDomain} emails.',
+      );
     }
     if (_accounts.containsKey(normalized)) {
       throw AuthException('An account already exists for this college email.');
@@ -270,38 +286,38 @@ class AuthService {
       studentId: 'MOCK2026',
     );
 
-    // 2. Mock Admin / Shopkeeper
-    const mockAdminEmail = 'mockadmin@college.ac.in';
-    const mockAdminUid = 'mock_admin_1';
-    _accounts[mockAdminEmail] = {'uid': mockAdminUid, 'password': 'mock'};
+    // 2. Mock Shopkeeper
+    const mockAdminEmail = 'xeroxshop@college.ac.in';
+    const mockAdminUid = 'shopkeeper_1';
+    _accounts[mockAdminEmail] = {'uid': mockAdminUid, 'password': '1234'};
     _profiles[mockAdminUid] = const UserProfile(
       id: mockAdminUid,
-      name: 'Campus Xerox Admin',
+      name: 'Campus Xerox',
       email: mockAdminEmail,
       role: 'shopkeeper',
       studentId: '',
     );
 
-    const mockAdminEmail2 = 'mock_admin@college.ac.in';
-    _accounts[mockAdminEmail2] = {'uid': mockAdminUid, 'password': 'mock'};
+    const mockAdminEmail2 = 'shopkeeper@college.ac.in';
+    _accounts[mockAdminEmail2] = {'uid': mockAdminUid, 'password': '1234'};
 
     await _saveAccountsAndProfiles();
   }
 
   Future<void> ensureDemoShopkeeper() async {
-    const email = 'shopkeeper@college.ac.in';
+    const email = 'xeroxshop@college.ac.in';
     const uid = 'shopkeeper_1';
-    if (!_accounts.containsKey(email)) {
-      _accounts[email] = {'uid': uid, 'password': 'Shop@12345'};
-      _profiles[uid] = const UserProfile(
-        id: uid,
-        name: 'Campus Xerox Shop',
-        email: email,
-        role: 'shopkeeper',
-        studentId: '',
-      );
-      await _saveAccountsAndProfiles();
-    }
+    _accounts[email] = {'uid': uid, 'password': '1234'};
+    _profiles[uid] = const UserProfile(
+      id: uid,
+      name: 'Campus Xerox',
+      email: email,
+      role: 'shopkeeper',
+      studentId: '',
+    );
+    // Backward compatibility for old demo email
+    _accounts['shopkeeper@college.ac.in'] = {'uid': uid, 'password': '1234'};
+    await _saveAccountsAndProfiles();
   }
 
   Future<void> ensureDemoStudent() async {
@@ -323,12 +339,16 @@ class AuthService {
   Future<void> sendPasswordReset(String email) async {
     final normalized = email.trim().toLowerCase();
     if (!isCollegeEmail(normalized)) {
-      throw AuthException('Enter a valid @${AppConfig.collegeEmailDomain} college email.');
+      throw AuthException(
+        'Enter a valid @${AppConfig.collegeEmailDomain} college email.',
+      );
     }
 
     if (SupabaseConfig.isConfigured) {
       try {
-        await sb.Supabase.instance.client.auth.resetPasswordForEmail(normalized);
+        await sb.Supabase.instance.client.auth.resetPasswordForEmail(
+          normalized,
+        );
         return;
       } catch (_) {}
     }

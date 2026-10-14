@@ -127,7 +127,10 @@ class _PaymentModalState extends State<PaymentModal> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppTheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
@@ -189,11 +192,26 @@ class _PaymentModalState extends State<PaymentModal> {
               ),
             ),
             const SizedBox(height: 10),
-            _upiOption('gpay', 'Google Pay', Icons.account_balance_wallet_rounded, const Color(0xFF4285F4)),
+            _upiOption(
+              'gpay',
+              'Google Pay',
+              Icons.account_balance_wallet_rounded,
+              const Color(0xFF4285F4),
+            ),
             const SizedBox(height: 8),
-            _upiOption('phonepe', 'PhonePe UPI', Icons.flash_on_rounded, const Color(0xFF5F259F)),
+            _upiOption(
+              'phonepe',
+              'PhonePe UPI',
+              Icons.flash_on_rounded,
+              const Color(0xFF5F259F),
+            ),
             const SizedBox(height: 8),
-            _upiOption('paytm', 'Paytm UPI', Icons.payment_rounded, const Color(0xFF002970)),
+            _upiOption(
+              'paytm',
+              'Paytm UPI',
+              Icons.payment_rounded,
+              const Color(0xFF002970),
+            ),
             const SizedBox(height: 16),
 
             Text(
@@ -206,9 +224,19 @@ class _PaymentModalState extends State<PaymentModal> {
               ),
             ),
             const SizedBox(height: 10),
-            _upiOption('card', 'Debit / Credit Card', Icons.credit_card_rounded, Colors.teal),
+            _upiOption(
+              'card',
+              'Debit / Credit Card',
+              Icons.credit_card_rounded,
+              Colors.teal,
+            ),
             const SizedBox(height: 8),
-            _upiOption('netbanking', 'Net Banking (All Major Banks)', Icons.account_balance_rounded, Colors.orange),
+            _upiOption(
+              'netbanking',
+              'Net Banking (All Major Banks)',
+              Icons.account_balance_rounded,
+              Colors.orange,
+            ),
 
             const SizedBox(height: 22),
             SizedBox(
@@ -276,9 +304,17 @@ class _PaymentModalState extends State<PaymentModal> {
               ),
             ),
             if (isSelected)
-              Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 20)
+              Icon(
+                Icons.check_circle_rounded,
+                color: AppTheme.primary,
+                size: 20,
+              )
             else
-              Icon(Icons.radio_button_unchecked, color: Colors.grey.withValues(alpha: 0.4), size: 20),
+              Icon(
+                Icons.radio_button_unchecked,
+                color: Colors.grey.withValues(alpha: 0.4),
+                size: 20,
+              ),
           ],
         ),
       ),

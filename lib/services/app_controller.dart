@@ -31,8 +31,8 @@ class AppController extends ChangeNotifier {
   UserRole get role => _role;
   List<PrintOrder> get allOrders => List.unmodifiable(_orders);
   List<PrintOrder> get studentOrders => List.unmodifiable(
-        _orders.where((o) => o.studentId == studentId).toList(),
-      );
+    _orders.where((o) => o.studentId == studentId).toList(),
+  );
   List<ExpenseEntry> get expenses => List.unmodifiable(_expenses);
 
   double get totalRevenue => _orders
@@ -67,9 +67,12 @@ class AppController extends ChangeNotifier {
     required bool binding,
   }) {
     final printTotal =
-        pages * copies * prices.priceFor(color: color, doubleSided: doubleSided);
+        pages *
+        copies *
+        prices.priceFor(color: color, doubleSided: doubleSided);
     final extras =
-        (lamination ? prices.lamination : 0.0) + (binding ? prices.binding : 0.0);
+        (lamination ? prices.lamination : 0.0) +
+        (binding ? prices.binding : 0.0);
     return printTotal + extras;
   }
 
@@ -108,9 +111,7 @@ class AppController extends ChangeNotifier {
       binding: binding,
       total: total,
       paymentMode: paymentMode,
-      paymentStatus: paymentMode == PaymentMode.online
-          ? PaymentStatus.paid
-          : PaymentStatus.unpaid,
+      paymentStatus: PaymentStatus.unpaid,
       status: OrderStatus.pending,
       createdAt: DateTime.now(),
     );

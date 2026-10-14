@@ -97,15 +97,16 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                         const SizedBox(height: 18),
                         Text(
                           'Student Sign In',
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.w900,
-                              ),
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           'Submit and track your college print orders online.',
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -128,7 +129,8 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                             labelText: 'Password',
                             prefixIcon: const Icon(Icons.lock_outline_rounded),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(() => obscure = !obscure),
+                              onPressed: () =>
+                                  setState(() => obscure = !obscure),
                               icon: Icon(
                                 obscure
                                     ? Icons.visibility_outlined
@@ -148,7 +150,9 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                               }
                               try {
                                 await widget.auth.sendPasswordReset(email.text);
-                                _show('Password reset link sent to ${email.text}.');
+                                _show(
+                                  'Password reset link sent to ${email.text}.',
+                                );
                               } catch (e) {
                                 _show(e.toString());
                               }
@@ -175,7 +179,9 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                             Text(
                               "Don't have an account?",
                               style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
                             TextButton(

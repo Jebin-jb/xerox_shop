@@ -33,7 +33,8 @@ class StudentOrders extends StatelessWidget {
           children: [
             PageIntro(
               title: 'My Print Orders',
-              subtitle: 'Track status, view collection codes, and check payment status.',
+              subtitle:
+                  'Track status, view collection codes, and check payment status.',
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -49,13 +50,17 @@ class StudentOrders extends StatelessWidget {
                   IconButton(
                     tooltip: 'Sign Out',
                     onPressed: onSignOut,
-                    icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+                    icon: const Icon(
+                      Icons.logout_rounded,
+                      color: Colors.redAccent,
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 18),
-            if (snap.connectionState == ConnectionState.waiting && !snap.hasData)
+            if (snap.connectionState == ConnectionState.waiting &&
+                !snap.hasData)
               const Center(
                 child: Padding(
                   padding: EdgeInsets.all(32),

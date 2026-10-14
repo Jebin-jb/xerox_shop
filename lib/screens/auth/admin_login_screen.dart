@@ -79,7 +79,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                             ),
                             const Spacer(),
                             const StatusChip(
-                              label: 'ADMIN CONSOLE',
+                              label: 'SHOPKEEPER PORTAL',
                               color: adminColor,
                             ),
                             const SizedBox(width: 8),
@@ -95,27 +95,28 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         ),
                         const SizedBox(height: 18),
                         Text(
-                          'Shopkeeper Admin Sign In',
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.w900,
-                              ),
+                          'Shopkeeper Sign In',
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           'Manage order queue, download documents & adjust prices.',
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 20),
 
                         TextField(
                           controller: email,
                           keyboardType: TextInputType.emailAddress,
                           decoration: const InputDecoration(
-                            labelText: 'Admin College Email',
-                            hintText: 'e.g. shopkeeper@college.ac.in',
-                            prefixIcon: Icon(Icons.admin_panel_settings_outlined),
+                            labelText: 'Shopkeeper College Email',
+                            hintText: 'e.g. xeroxshop@college.ac.in',
+                            prefixIcon: Icon(Icons.storefront_rounded),
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -124,10 +125,11 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           controller: password,
                           obscureText: obscure,
                           decoration: InputDecoration(
-                            labelText: 'Admin Password',
+                            labelText: 'Shopkeeper Password',
                             prefixIcon: const Icon(Icons.lock_outline_rounded),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(() => obscure = !obscure),
+                              onPressed: () =>
+                                  setState(() => obscure = !obscure),
                               icon: Icon(
                                 obscure
                                     ? Icons.visibility_outlined
@@ -155,10 +157,14 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                       color: Colors.white,
                                     ),
                                   )
-                                : const Icon(Icons.shield_rounded),
+                                : const Icon(Icons.storefront_rounded),
                             label: Text(
-                              loading ? 'Verifying…' : 'Enter Admin Console',
-                              style: const TextStyle(fontWeight: FontWeight.w800),
+                              loading
+                                  ? 'Verifying…'
+                                  : 'Enter Shopkeeper Portal',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                             onPressed: loading ? null : submit,
                           ),

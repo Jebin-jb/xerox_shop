@@ -21,44 +21,41 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => StreamBuilder<AppUser?>(
-        stream: auth.authState,
-        initialData: auth.currentUser,
-        builder: (context, authSnapshot) {
-          final user = authSnapshot.data;
-          if (user == null) {
-            return PortalSelectionScreen(
+    stream: auth.authState,
+    initialData: auth.currentUser,
+    builder: (context, authSnapshot) {
+      final user = authSnapshot.data;
+      if (user == null) {
+        return PortalSelectionScreen(auth: auth, onToggleTheme: onToggleTheme);
+      }
+
+      return StreamBuilder<UserProfile?>(
+        stream: auth.profileStream(user.uid),
+        initialData: auth.profile(user.uid),
+        builder: (context, profileSnapshot) {
+          final p = profileSnapshot.data ?? auth.profile(user.uid);
+          if (p == null) {
+            return const CampusSplashScreen(
+              statusText: 'Synchronizing profile…',
+            );
+          }
+
+          if (p.role == UserRole.shopkeeper.name) {
+            return ShopkeeperShell(
               auth: auth,
+              dataService: dataService,
               onToggleTheme: onToggleTheme,
             );
           }
 
-          return StreamBuilder<UserProfile?>(
-            stream: auth.profileStream(user.uid),
-            initialData: auth.profile(user.uid),
-            builder: (context, profileSnapshot) {
-              final p = profileSnapshot.data ?? auth.profile(user.uid);
-              if (p == null) {
-                return const CampusSplashScreen(
-                  statusText: 'Synchronizing profile…',
-                );
-              }
-
-              if (p.role == UserRole.shopkeeper.name) {
-                return ShopkeeperShell(
-                  auth: auth,
-                  dataService: dataService,
-                  onToggleTheme: onToggleTheme,
-                );
-              }
-
-              return StudentShell(
-                auth: auth,
-                dataService: dataService,
-                profile: p,
-                onToggleTheme: onToggleTheme,
-              );
-            },
+          return StudentShell(
+            auth: auth,
+            dataService: dataService,
+            profile: p,
+            onToggleTheme: onToggleTheme,
           );
         },
       );
+    },
+  );
 }

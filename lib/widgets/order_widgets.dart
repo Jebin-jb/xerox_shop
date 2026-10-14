@@ -3,27 +3,27 @@ import '../models/app_models.dart';
 import 'glass.dart';
 
 String orderStatusLabel(OrderStatus s) => switch (s) {
-      OrderStatus.pending => 'Pending',
-      OrderStatus.accepted => 'Accepted',
-      OrderStatus.printing => 'Printing',
-      OrderStatus.ready => 'Ready to Pick',
-      OrderStatus.completed => 'Completed',
-      OrderStatus.cancelled => 'Cancelled',
-      OrderStatus.rejected => 'Rejected',
-    };
+  OrderStatus.pending => 'Pending',
+  OrderStatus.accepted => 'Accepted',
+  OrderStatus.printing => 'Printing',
+  OrderStatus.ready => 'Ready to Pick',
+  OrderStatus.completed => 'Completed',
+  OrderStatus.cancelled => 'Cancelled',
+  OrderStatus.rejected => 'Rejected',
+};
 
 String paymentLabel(PaymentMode p) =>
-    p == PaymentMode.online ? 'Online Paid' : 'Pay at Counter';
+    p == PaymentMode.online ? 'Online Payment' : 'Pay at Counter';
 
 Color statusColor(OrderStatus s) => switch (s) {
-      OrderStatus.pending => const Color(0xFFE67E22),
-      OrderStatus.accepted => const Color(0xFF3F51B5),
-      OrderStatus.printing => const Color(0xFF0091EA),
-      OrderStatus.ready => const Color(0xFF00C853),
-      OrderStatus.completed => const Color(0xFF00897B),
-      OrderStatus.cancelled => const Color(0xFFE53935),
-      OrderStatus.rejected => const Color(0xFFD32F2F),
-    };
+  OrderStatus.pending => const Color(0xFFE67E22),
+  OrderStatus.accepted => const Color(0xFF3F51B5),
+  OrderStatus.printing => const Color(0xFF0091EA),
+  OrderStatus.ready => const Color(0xFF00C853),
+  OrderStatus.completed => const Color(0xFF00897B),
+  OrderStatus.cancelled => const Color(0xFFE53935),
+  OrderStatus.rejected => const Color(0xFFD32F2F),
+};
 
 class OrderCard extends StatelessWidget {
   final PrintOrder order;
@@ -39,113 +39,138 @@ class OrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FadeSlide(
-        child: GlassPanel(
-          onTap: onTap,
-          padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    Icons.description_rounded,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 24,
-                  ),
+    child: GlassPanel(
+      onTap: onTap,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        order.fileName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                child: Icon(
+                  Icons.description_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      order.fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        shopkeeper
-                            ? '${order.studentName} • ${order.studentId}'
-                            : 'Code: #${order.code}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      shopkeeper
+                          ? '${order.studentName} • ${order.studentId}'
+                          : 'Code: #${order.code}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                StatusChip(
-                  label: orderStatusLabel(order.status).toUpperCase(),
-                  color: statusColor(order.status),
+              ),
+              const SizedBox(width: 8),
+              StatusChip(
+                label: orderStatusLabel(order.status).toUpperCase(),
+                color: statusColor(order.status),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _Meta(
+                  '₹${order.total.toStringAsFixed(0)}',
+                  Icons.payments_outlined,
                 ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: _Meta(
-                    '₹${order.total.toStringAsFixed(0)}',
-                    Icons.payments_outlined,
-                  ),
+              ),
+              Expanded(
+                child: _Meta(
+                  '${order.pages}p × ${order.copies}',
+                  Icons.copy_all_rounded,
                 ),
-                Expanded(
-                  child: _Meta(
-                    '${order.pages}p × ${order.copies}',
-                    Icons.copy_all_rounded,
-                  ),
+              ),
+              Expanded(
+                child: _Meta(
+                  order.color ? 'Color' : 'B&W',
+                  Icons.palette_outlined,
                 ),
-                Expanded(
-                  child: _Meta(
-                    order.color ? 'Color' : 'B&W',
-                    Icons.palette_outlined,
-                  ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(
+                order.paymentMode == PaymentMode.online
+                    ? Icons.account_balance_wallet_outlined
+                    : Icons.storefront_rounded,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                paymentLabel(order.paymentMode),
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Icon(
-                  order.paymentMode == PaymentMode.online
-                      ? Icons.account_balance_wallet_outlined
-                      : Icons.storefront_rounded,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  paymentLabel(order.paymentMode),
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                ),
-                const Spacer(),
-                if (order.paymentMode == PaymentMode.counter)
-                  StatusChip(
-                    label: order.paymentStatus == PaymentStatus.paid ? 'PAID' : 'UNPAID',
-                    color: order.paymentStatus == PaymentStatus.paid
-                        ? Colors.green
-                        : Colors.orange,
-                  ),
-              ],
-            ),
-          ],
-        ),
+              ),
+              const Spacer(),
+              StatusChip(
+                label: switch (order.paymentStatus) {
+                  PaymentStatus.paid => 'PAID',
+                  PaymentStatus.payment_submitted ||
+                  PaymentStatus.verification_pending => 'VERIFYING',
+                  PaymentStatus.payment_initiated => 'INITIATED',
+                  PaymentStatus.failed || PaymentStatus.payment_failed => 'FAILED',
+                  PaymentStatus.cancelled => 'CANCELLED',
+                  PaymentStatus.unpaid => 'UNPAID',
+                  PaymentStatus.refund_initiated => 'REFUND INIT',
+                  PaymentStatus.refunded => 'REFUNDED',
+                },
+                color: switch (order.paymentStatus) {
+                  PaymentStatus.paid => Colors.green,
+                  PaymentStatus.payment_submitted ||
+                  PaymentStatus.verification_pending => Colors.orange,
+                  PaymentStatus.payment_initiated => Colors.amber,
+                  PaymentStatus.failed || PaymentStatus.payment_failed => Colors.red,
+                  PaymentStatus.cancelled => Colors.redAccent,
+                  PaymentStatus.unpaid => Colors.orange,
+                  PaymentStatus.refund_initiated => Colors.blueGrey,
+                  PaymentStatus.refunded => Colors.teal,
+                },
+              ),
+            ],
+          ),
+        ],
       ),
-    );
+    ),
+  );
 }
 
 class _Meta extends StatelessWidget {
@@ -155,22 +180,22 @@ class _Meta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        children: [
-          Icon(
-            icon,
-            size: 15,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              text,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-            ),
-          ),
-        ],
-      );
+    children: [
+      Icon(
+        icon,
+        size: 15,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      const SizedBox(width: 5),
+      Flexible(
+        child: Text(
+          text,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+        ),
+      ),
+    ],
+  );
 }
 
 class StatusTimeline extends StatelessWidget {
@@ -255,7 +280,9 @@ class StatusTimeline extends StatelessWidget {
                         orderStatusLabel(steps[i]),
                         style: TextStyle(
                           fontSize: 8.5,
-                          fontWeight: isCurrent ? FontWeight.w900 : FontWeight.w600,
+                          fontWeight: isCurrent
+                              ? FontWeight.w900
+                              : FontWeight.w600,
                           color: isReached
                               ? Theme.of(context).colorScheme.onSurface
                               : Theme.of(context).colorScheme.onSurfaceVariant,
@@ -271,7 +298,9 @@ class StatusTimeline extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: i < current
                               ? statusColor(steps[i])
-                              : Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                              : Theme.of(
+                                  context,
+                                ).dividerColor.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),

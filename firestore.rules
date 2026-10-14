@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isStudent() { return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student' && request.auth.token.email.matches('.*@college\\.ac\\.in$'); }
+    function isShopkeeper() { return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'shopkeeper'; }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid || isShopkeeper();
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role == 'student';
+      allow update: if signedIn() && request.auth.uid == uid && request.resource.data.role == resource.data.role;
+      allow delete: if false;
+    }
+
+    // Sensitive Bank & Payment Account: Only Shopkeeper can read or write
+    match /shops/{shopId}/settings/payment_account {
+      allow read, write: if isShopkeeper();
+    }
+
+    // Public Live Pricing & Safe Payment Configuration (Students can view, only Shopkeeper can edit)
+    match /shops/{shopId}/settings/{docId} {
+      allow read: if signedIn();
+      allow write: if isShopkeeper();
+    }
+
+    match /orders/{orderId} {
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow read: if isShopkeeper() || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow update: if isShopkeeper()
+        || (isStudent() && resource.data.studentId == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'cancelled');
+      allow delete: if false;
+    }
+
+    match /expenses/{expenseId} {
+      allow read, create, update: if isShopkeeper();
+      allow delete: if false;
+    }
+  }
+}

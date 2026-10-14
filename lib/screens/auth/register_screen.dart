@@ -35,7 +35,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> submit() async {
-    if ([name.text, studentId.text, email.text, password.text].any((x) => x.trim().isEmpty)) {
+    if ([
+      name.text,
+      studentId.text,
+      email.text,
+      password.text,
+    ].any((x) => x.trim().isEmpty)) {
       return _show('Please fill in all fields.');
     }
     if (password.text.length < 4) {
@@ -108,15 +113,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 10),
                         Text(
                           'Create Student Account',
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.w900,
-                              ),
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           'Use your official college email address to get started.',
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -159,7 +165,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             labelText: 'Password',
                             prefixIcon: const Icon(Icons.lock_outline_rounded),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(() => obscure = !obscure),
+                              onPressed: () =>
+                                  setState(() => obscure = !obscure),
                               icon: Icon(
                                 obscure
                                     ? Icons.visibility_outlined

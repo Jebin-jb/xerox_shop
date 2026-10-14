@@ -99,7 +99,6 @@ class _ShopReportsState extends State<ShopReports> {
       children: [
         PageIntro(
           title: 'Financial Reports & Profit',
-          subtitle: 'Track revenues, expenses, and net profit over any custom date range.',
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -107,9 +106,7 @@ class _ShopReportsState extends State<ShopReports> {
                 tooltip: isDark ? 'Light Mode' : 'Dark Mode',
                 onPressed: widget.onToggleTheme,
                 icon: Icon(
-                  isDark
-                      ? Icons.light_mode_rounded
-                      : Icons.dark_mode_rounded,
+                  isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
                 ),
               ),
               IconButton(
@@ -169,20 +166,38 @@ class _ShopReportsState extends State<ShopReports> {
               stream: widget.dataService.expenses(),
               builder: (context, expSnap) {
                 final orders = (orderSnap.data ?? [])
-                    .where((o) =>
-                        o.paymentStatus == PaymentStatus.paid &&
-                        o.createdAt.isAfter(range.start.subtract(const Duration(days: 1))) &&
-                        o.createdAt.isBefore(range.end.add(const Duration(days: 1))))
+                    .where(
+                      (o) =>
+                          o.paymentStatus == PaymentStatus.paid &&
+                          o.createdAt.isAfter(
+                            range.start.subtract(const Duration(days: 1)),
+                          ) &&
+                          o.createdAt.isBefore(
+                            range.end.add(const Duration(days: 1)),
+                          ),
+                    )
                     .toList();
 
                 final expenses = (expSnap.data ?? [])
-                    .where((e) =>
-                        e.createdAt.isAfter(range.start.subtract(const Duration(days: 1))) &&
-                        e.createdAt.isBefore(range.end.add(const Duration(days: 1))))
+                    .where(
+                      (e) =>
+                          e.createdAt.isAfter(
+                            range.start.subtract(const Duration(days: 1)),
+                          ) &&
+                          e.createdAt.isBefore(
+                            range.end.add(const Duration(days: 1)),
+                          ),
+                    )
                     .toList();
 
-                final totalRevenue = orders.fold(0.0, (sum, o) => sum + o.total);
-                final totalExpense = expenses.fold(0.0, (sum, e) => sum + e.amount);
+                final totalRevenue = orders.fold(
+                  0.0,
+                  (sum, o) => sum + o.total,
+                );
+                final totalExpense = expenses.fold(
+                  0.0,
+                  (sum, e) => sum + e.amount,
+                );
                 final netProfit = totalRevenue - totalExpense;
 
                 return Column(
@@ -223,7 +238,6 @@ class _ShopReportsState extends State<ShopReports> {
                     // Add Expense Box
                     const PageIntro(
                       title: 'Log Shop Expense',
-                      subtitle: 'Record paper bundles, toner refills, electricity & maintenance.',
                     ),
                     const SizedBox(height: 12),
 
@@ -236,7 +250,7 @@ class _ShopReportsState extends State<ShopReports> {
                             controller: descController,
                             decoration: const InputDecoration(
                               labelText: 'Expense Description',
-                              hintText: 'e.g. JK Copier 75GSM 5x Reams',
+                              hintText: 'e.g. Paper reams, toner refill',
                               prefixIcon: Icon(Icons.notes_rounded),
                             ),
                           ),
@@ -252,15 +266,37 @@ class _ShopReportsState extends State<ShopReports> {
                                     prefixIcon: Icon(Icons.category_rounded),
                                   ),
                                   items: const [
-                                    DropdownMenuItem(value: 'Paper Bundle', child: Text('Paper')),
-                                    DropdownMenuItem(value: 'Toner / Ink', child: Text('Toner/Ink')),
-                                    DropdownMenuItem(value: 'Binding / Spiral', child: Text('Binding')),
-                                    DropdownMenuItem(value: 'Maintenance', child: Text('Repair')),
-                                    DropdownMenuItem(value: 'Electricity', child: Text('Bills')),
-                                    DropdownMenuItem(value: 'Other', child: Text('Other')),
+                                    DropdownMenuItem(
+                                      value: 'Paper Bundle',
+                                      child: Text('Paper'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Toner / Ink',
+                                      child: Text('Toner/Ink'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Binding / Spiral',
+                                      child: Text('Binding'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Maintenance',
+                                      child: Text('Repair'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Electricity',
+                                      child: Text('Bills'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'Other',
+                                      child: Text('Other'),
+                                    ),
                                   ],
                                   onChanged: (v) {
-                                    if (v != null) setState(() => categoryController.text = v);
+                                    if (v != null) {
+                                      setState(
+                                        () => categoryController.text = v,
+                                      );
+                                    }
                                   },
                                 ),
                               ),
@@ -269,7 +305,10 @@ class _ShopReportsState extends State<ShopReports> {
                                 flex: 2,
                                 child: TextField(
                                   controller: amountController,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
                                   decoration: const InputDecoration(
                                     labelText: 'Amount',
                                     prefixText: '₹ ',
@@ -292,11 +331,16 @@ class _ShopReportsState extends State<ShopReports> {
                                   ? const SizedBox(
                                       width: 16,
                                       height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
                                     )
-                                  : const Icon(Icons.add_circle_outline_rounded),
+                                  : const Icon(
+                                      Icons.add_circle_outline_rounded,
+                                    ),
                               label: const Text(
-                                'Record Expense',
+                                'Add Expense',
                                 style: TextStyle(fontWeight: FontWeight.w800),
                               ),
                             ),
@@ -311,43 +355,66 @@ class _ShopReportsState extends State<ShopReports> {
                     if (expenses.isNotEmpty) ...[
                       const PageIntro(
                         title: 'Recent Expenses',
-                        subtitle: 'Recorded shopkeeper outgoing expenditure.',
                       ),
                       const SizedBox(height: 12),
-                      ...expenses.reversed.take(6).map(
+                      ...expenses.reversed
+                          .take(6)
+                          .map(
                             (e) => Padding(
                               padding: const EdgeInsets.only(bottom: 8),
                               child: GlassPanel(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
                                 child: Row(
                                   children: [
                                     Container(
                                       padding: const EdgeInsets.all(8),
                                       decoration: BoxDecoration(
-                                        color: Colors.red.withValues(alpha: 0.1),
+                                        color: Colors.red.withValues(
+                                          alpha: 0.1,
+                                        ),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
-                                      child: const Icon(Icons.receipt_outlined, color: Colors.red, size: 18),
+                                      child: const Icon(
+                                        Icons.receipt_outlined,
+                                        color: Colors.red,
+                                        size: 18,
+                                      ),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             e.title,
-                                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13.5,
+                                            ),
                                           ),
                                           Text(
                                             '${e.category} • ${DateFormat('dd MMM, hh:mm a').format(e.createdAt)}',
-                                            style: TextStyle(fontSize: 11.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                            ),
                                           ),
                                         ],
                                       ),
                                     ),
                                     Text(
                                       '-₹${e.amount.toStringAsFixed(0)}',
-                                      style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.red, fontSize: 14.5),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.red,
+                                        fontSize: 14.5,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -365,36 +432,42 @@ class _ShopReportsState extends State<ShopReports> {
     );
   }
 
-  Widget _metricCard(String title, String value, Color color, IconData icon, {bool isHero = false}) => GlassPanel(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _metricCard(
+    String title,
+    String value,
+    Color color,
+    IconData icon, {
+    bool isHero = false,
+  }) => GlassPanel(
+    padding: const EdgeInsets.all(18),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: isHero ? 13 : 11.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                Icon(icon, size: isHero ? 22 : 18, color: color),
-              ],
-            ),
-            const SizedBox(height: 8),
             Text(
-              value,
+              title,
               style: TextStyle(
-                fontSize: isHero ? 28 : 22,
-                fontWeight: FontWeight.w900,
-                color: color,
-                letterSpacing: -0.5,
+                fontSize: isHero ? 13 : 11.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
               ),
             ),
+            Icon(icon, size: isHero ? 22 : 18, color: color),
           ],
         ),
-      );
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: isHero ? 28 : 22,
+            fontWeight: FontWeight.w900,
+            color: color,
+            letterSpacing: -0.5,
+          ),
+        ),
+      ],
+    ),
+  );
 }

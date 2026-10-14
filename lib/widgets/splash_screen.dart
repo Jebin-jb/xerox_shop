@@ -86,15 +86,15 @@ class _CampusSplashScreenState extends State<CampusSplashScreen>
                                     : Colors.white,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppTheme.primary.withValues(alpha: 0.25),
+                                    color: AppTheme.primary.withValues(
+                                      alpha: 0.25,
+                                    ),
                                     blurRadius: 24,
                                     spreadRadius: 2,
                                   ),
                                 ],
                               ),
-                              child: const Center(
-                                child: AppLogo(size: 54),
-                              ),
+                              child: const Center(child: AppLogo(size: 54)),
                             ),
                           ],
                         );
@@ -136,8 +136,9 @@ class _CampusSplashScreenState extends State<CampusSplashScreen>
                             valueColor: const AlwaysStoppedAnimation<Color>(
                               AppTheme.primary,
                             ),
-                            backgroundColor:
-                                AppTheme.primary.withValues(alpha: 0.12),
+                            backgroundColor: AppTheme.primary.withValues(
+                              alpha: 0.12,
+                            ),
                           ),
                         ),
                       ],
