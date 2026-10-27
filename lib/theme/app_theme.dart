@@ -65,6 +65,7 @@ class AppTheme {
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
         centerTitle: false,
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -131,6 +132,7 @@ class AppTheme {
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
         centerTitle: false,
         iconTheme: IconThemeData(color: Color(0xFFF0F4F8)),
         titleTextStyle: TextStyle(

@@ -5,6 +5,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/order_widgets.dart';
 import 'bank_payment_account_screen.dart';
+import 'shop_settings_screen.dart';
 
 class ShopDashboard extends StatelessWidget {
   final DataService dataService;
@@ -23,11 +24,20 @@ class ShopDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => StreamBuilder<List<PrintOrder>>(
     stream: dataService.allOrders(),
+    initialData: dataService.allOrdersDirect,
     builder: (context, snap) {
-      final orders = snap.data ?? [];
+      final allOrders = snap.data ?? dataService.allOrdersDirect;
+      final activeOrders = allOrders
+          .where((x) => !x.isDeletedFromQueue)
+          .toList();
+      final pendingOrders = allOrders
+          .where(
+            (x) => !x.isDeletedFromQueue && x.status == OrderStatus.pending,
+          )
+          .toList();
       final today = DateTime.now();
 
-      final todayOrders = orders
+      final todayOrders = allOrders
           .where(
             (x) =>
                 x.createdAt.year == today.year &&
@@ -45,142 +55,172 @@ class ShopDashboard extends StatelessWidget {
           )
           .fold(0.0, (sum, x) => sum + x.total);
 
-      final pendingCount = orders
+      final pendingCount = activeOrders
           .where((x) => x.status == OrderStatus.pending)
           .length;
-      final printingCount = orders
+      final printingCount = activeOrders
           .where((x) => x.status == OrderStatus.printing)
           .length;
 
-      final readyCount = orders
+      final readyCount = activeOrders
           .where((x) => x.status == OrderStatus.ready)
           .length;
-      final completedCount = orders
+      final completedCount = activeOrders
           .where((x) => x.status == OrderStatus.completed)
           .length;
-      final onlineCount = orders
+      final onlineCount = activeOrders
           .where((x) => x.paymentMode == PaymentMode.online)
           .length;
-      final counterCount = orders
+      final counterCount = activeOrders
           .where((x) => x.paymentMode == PaymentMode.counter)
           .length;
 
       final screenWidth = MediaQuery.sizeOf(context).width;
       final isDark = Theme.of(context).brightness == Brightness.dark;
 
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
-        children: [
-          PageIntro(
-            title: 'Shop Dashboard',
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
+      return RefreshIndicator(
+        onRefresh: () => dataService.refreshOrders(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+          children: [
+            PageIntro(
+              title: 'Shop Dashboard',
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: isDark ? 'Light Mode' : 'Dark Mode',
+                    onPressed: onToggleTheme,
+                    icon: Icon(
+                      isDark
+                          ? Icons.light_mode_rounded
+                          : Icons.dark_mode_rounded,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Settings',
+                    icon: const Icon(Icons.settings_rounded),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ShopSettingsScreen(
+                            dataService: dataService,
+                            onToggleTheme: onToggleTheme,
+                            onSignOut: onSignOut,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  IconButton(
+                    tooltip: 'Sign Out',
+                    onPressed: onSignOut,
+                    icon: const Icon(
+                      Icons.logout_rounded,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // KPI Stats Grid
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: screenWidth > 800
+                  ? 4
+                  : (screenWidth > 500 ? 2 : 2),
+              mainAxisSpacing: 14,
+              crossAxisSpacing: 14,
+              childAspectRatio: screenWidth > 600
+                  ? 1.6
+                  : (screenWidth < 360 ? 1.15 : 1.35),
               children: [
-                IconButton(
-                  tooltip: isDark ? 'Light Mode' : 'Dark Mode',
-                  onPressed: onToggleTheme,
-                  icon: Icon(
-                    isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-                  ),
+                _statCard(
+                  title: 'Today Orders',
+                  value: '${todayOrders.length}',
+                  color: AppTheme.primary,
+                  icon: Icons.receipt_long_rounded,
                 ),
-                IconButton(
-                  tooltip: 'Sign Out',
-                  onPressed: onSignOut,
-                  icon: const Icon(
-                    Icons.logout_rounded,
-                    color: Colors.redAccent,
-                  ),
+                _statCard(
+                  title: 'Today Revenue',
+                  value: '₹${todayRevenue.toStringAsFixed(0)}',
+                  color: Colors.green,
+                  icon: Icons.currency_rupee_rounded,
+                ),
+                _statCard(
+                  title: 'Pending Queue',
+                  value: '$pendingCount',
+                  color: Colors.orange,
+                  icon: Icons.hourglass_top_rounded,
+                ),
+                _statCard(
+                  title: 'In Printing',
+                  value: '$printingCount',
+                  color: const Color(0xFF00A2FF),
+                  icon: Icons.print_rounded,
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 20),
 
-          // KPI Stats Grid
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: screenWidth > 800 ? 4 : (screenWidth > 500 ? 2 : 2),
-            mainAxisSpacing: 14,
-            crossAxisSpacing: 14,
-            childAspectRatio: screenWidth > 600
-                ? 1.6
-                : (screenWidth < 360 ? 1.15 : 1.35),
-            children: [
-              _statCard(
-                title: 'Today Orders',
-                value: '${todayOrders.length}',
-                color: AppTheme.primary,
-                icon: Icons.receipt_long_rounded,
-              ),
-              _statCard(
-                title: 'Today Revenue',
-                value: '₹${todayRevenue.toStringAsFixed(0)}',
-                color: Colors.green,
-                icon: Icons.currency_rupee_rounded,
-              ),
-              _statCard(
-                title: 'Pending Queue',
-                value: '$pendingCount',
-                color: Colors.orange,
-                icon: Icons.hourglass_top_rounded,
-              ),
-              _statCard(
-                title: 'In Printing',
-                value: '$printingCount',
-                color: const Color(0xFF00A2FF),
-                icon: Icons.print_rounded,
-              ),
-            ],
-          ),
+            const SizedBox(height: 20),
 
-          const SizedBox(height: 20),
+            // Bank & Payment Account Direct Dashboard Card
+            _buildPaymentAccountCard(context),
 
-          // Bank & Payment Account Direct Dashboard Card
-          _buildPaymentAccountCard(context),
+            const SizedBox(height: 24),
+            const PageIntro(title: 'Live Queue Summary'),
+            const SizedBox(height: 12),
 
-          const SizedBox(height: 24),
-          const PageIntro(
-            title: 'Live Queue Summary',
-          ),
-          const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _queuePill('Pending', '$pendingCount', Colors.orange),
+                _queuePill(
+                  'Printing',
+                  '$printingCount',
+                  const Color(0xFF00A2FF),
+                ),
+                _queuePill('Ready', '$readyCount', const Color(0xFF00C853)),
+                _queuePill('Completed', '$completedCount', Colors.teal),
+                _queuePill('Online', '$onlineCount', Colors.purple),
+                _queuePill(
+                  'Pay at Counter',
+                  '$counterCount',
+                  Colors.amber.shade800,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            const PageIntro(title: 'Pending Orders'),
+            const SizedBox(height: 12),
 
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _queuePill('Pending', '$pendingCount', Colors.orange),
-              _queuePill('Printing', '$printingCount', const Color(0xFF00A2FF)),
-              _queuePill('Ready', '$readyCount', const Color(0xFF00C853)),
-              _queuePill('Completed', '$completedCount', Colors.teal),
-              _queuePill('Online', '$onlineCount', Colors.purple),
-              _queuePill('Pay at Counter', '$counterCount', Colors.amber.shade800),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          if (orders.isEmpty)
-            GlassPanel(
-              padding: const EdgeInsets.all(32),
-              child: Center(
-                child: Text(
-                  'No orders in the system yet.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+            if (pendingOrders.isEmpty)
+              GlassPanel(
+                padding: const EdgeInsets.all(32),
+                child: Center(
+                  child: Text(
+                    'No pending orders in the queue.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ),
-            )
-          else
-            ...orders
-                .take(5)
-                .map(
-                  (o) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: OrderCard(order: o),
-                  ),
+              )
+            else
+              ...pendingOrders.map(
+                (o) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: OrderCard(order: o),
                 ),
-        ],
+              ),
+          ],
+        ),
       );
     },
   );
@@ -250,7 +290,7 @@ class ShopDashboard extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Payment receiving account',
+                      'Settings → Bank & Payment Settings',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -339,18 +379,12 @@ class ShopDashboard extends StatelessWidget {
           Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 6),
           Text(
             '$label: ',
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
           ),
           Text(
             count,

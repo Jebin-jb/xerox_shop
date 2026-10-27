@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:pdfx/pdfx.dart';
 import '../models/app_models.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
@@ -24,6 +25,9 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
   Uint8List? _fileBytes;
   String? _errorMessage;
   bool _savingToDevice = false;
+  PdfControllerPinch? _pdfController;
+  int _pdfPage = 1;
+  int _totalPdfPages = 0;
 
   @override
   void initState() {
@@ -31,12 +35,40 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
     _loadFile();
   }
 
+  @override
+  void dispose() {
+    _pdfController?.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadFile() async {
+    if (widget.order.isPurged || widget.order.fileUrl.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+              'This document has been removed and securely purged from storage.';
+          _loading = false;
+        });
+      }
+      return;
+    }
+
     setState(() => _loading = true);
     try {
       final storage = StorageService();
       final bytes = await storage.downloadFile(widget.order.fileUrl);
       if (mounted) {
+        if (bytes != null &&
+            bytes.isNotEmpty &&
+            widget.order.fileName.toLowerCase().endsWith('.pdf')) {
+          try {
+            _pdfController = PdfControllerPinch(
+              document: PdfDocument.openData(bytes),
+            );
+          } catch (e) {
+            debugPrint('Could not initialize PdfControllerPinch: $e');
+          }
+        }
         setState(() {
           _fileBytes = bytes;
           _loading = false;
@@ -53,24 +85,72 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
   }
 
   Future<void> _exportToDevice() async {
-    if (_fileBytes == null || _fileBytes!.isEmpty) return;
     setState(() => _savingToDevice = true);
     try {
+      var bytes = _fileBytes;
+      if (bytes == null || bytes.isEmpty) {
+        bytes = await StorageService().downloadFile(widget.order.fileUrl);
+        if (bytes != null && bytes.isNotEmpty && mounted) {
+          setState(() => _fileBytes = bytes);
+        }
+      }
+
+      if (bytes == null || bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.amber[900],
+              content: const Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, color: Colors.white),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Document file is still downloading or unavailable. Please wait a moment and try again.',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
       final path = await StorageService().saveFileToDevice(
         fileName: widget.order.fileName,
-        bytes: _fileBytes!,
+        bytes: bytes,
         orderCode: widget.order.code,
       );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.teal[800],
-            content: Text(
-              path != null
-                  ? 'Saved to: $path'
-                  : 'Saved to device Downloads folder.',
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            content: Row(
+              children: [
+                const Icon(Icons.download_done_rounded, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    path != null
+                        ? 'Downloaded "${widget.order.fileName}" to:\n$path'
+                        : 'Downloaded "${widget.order.fileName}" to device Downloads folder.',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
             ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red[800],
+            content: Text('Download failed: $e'),
           ),
         );
       }
@@ -147,6 +227,21 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
                     ),
                   ),
                   IconButton(
+                    tooltip: 'Download Document',
+                    icon: _savingToDevice
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.download_rounded,
+                            size: 24,
+                            color: AppTheme.primary,
+                          ),
+                    onPressed: _savingToDevice ? null : _exportToDevice,
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.close_rounded),
                     onPressed: () => Navigator.pop(context),
                   ),
@@ -213,10 +308,8 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
                 decoration: BoxDecoration(
                   color: o.specialInstructions.trim().isNotEmpty
                       ? Colors.amber.withValues(alpha: 0.12)
-                      : Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withValues(alpha: 0.35),
+                      : Theme.of(context).colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: o.specialInstructions.trim().isNotEmpty
@@ -234,9 +327,7 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
                           size: 14,
                           color: o.specialInstructions.trim().isNotEmpty
                               ? Colors.amber[800]
-                              : Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(width: 5),
                         Text(
@@ -247,9 +338,9 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
                             letterSpacing: 0.3,
                             color: o.specialInstructions.trim().isNotEmpty
                                 ? Colors.amber[900]
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -275,36 +366,19 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
 
               const SizedBox(height: 18),
 
-              // Action buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.redAccent,
-                        side: const BorderSide(color: Colors.redAccent),
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        widget.onDeleteAfterPrint?.call();
-                      },
-                      icon: const Icon(Icons.delete_sweep_rounded, size: 18),
-                      label: const Text('Delete After Print'),
-                    ),
+              // Action button (Close / Done)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.done_all_rounded, size: 18),
-                      label: const Text('Done'),
-                    ),
-                  ),
-                ],
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.done_all_rounded, size: 18),
+                  label: const Text('Done'),
+                ),
               ),
             ],
           ),
@@ -334,10 +408,27 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Text(
-            'Unable to load preview: $_errorMessage',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.delete_sweep_rounded,
+                color: Colors.redAccent,
+                size: 40,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _errorMessage!.startsWith('This document')
+                    ? _errorMessage!
+                    : 'Unable to load preview: $_errorMessage',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -360,11 +451,85 @@ class _DocumentPreviewDialogState extends State<DocumentPreviewDialog> {
       );
     }
 
+    // 2. High-fidelity Interactive PDF Viewer with Pinch-Zoom & Multi-page
+    if (isPdf && _pdfController != null) {
+      return Stack(
+        children: [
+          PdfViewPinch(
+            controller: _pdfController!,
+            onPageChanged: (page) {
+              if (mounted) setState(() => _pdfPage = page);
+            },
+            onDocumentLoaded: (doc) {
+              if (mounted) setState(() => _totalPdfPages = doc.pagesCount);
+            },
+          ),
+          Positioned(
+            bottom: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                _totalPdfPages > 0
+                    ? 'Page $_pdfPage of $_totalPdfPages'
+                    : 'Page $_pdfPage',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton.filledTonal(
+                  tooltip: 'Previous Page',
+                  iconSize: 18,
+                  padding: const EdgeInsets.all(6),
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.arrow_back_ios_rounded, size: 14),
+                  onPressed: _pdfPage > 1
+                      ? () => _pdfController?.previousPage(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 4),
+                IconButton.filledTonal(
+                  tooltip: 'Next Page',
+                  iconSize: 18,
+                  padding: const EdgeInsets.all(6),
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                  onPressed: _totalPdfPages == 0 || _pdfPage < _totalPdfPages
+                      ? () => _pdfController?.nextPage(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                        )
+                      : null,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     final fileSizeKb = widget.order.fileSizeBytes > 0
         ? (widget.order.fileSizeBytes / 1024).toStringAsFixed(1)
         : null;
 
-    // 2. Document representation for PDF & DOC documents
+    // 3. Document representation for non-PDF documents or fallback
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(20),

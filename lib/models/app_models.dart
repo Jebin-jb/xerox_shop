@@ -57,60 +57,134 @@ enum PrintType {
     if (lower == 'color' || lower == 'colour') return PrintType.color;
     return PrintType.bw;
   }
+
+  static PrintType fromJson(dynamic json) => fromString(json?.toString());
+  String toJson() => name;
 }
 
 class PagePrintSetting {
   final int pageNumber;
   final PrintType printType;
   final double unitPrice;
+  final String orientation; // 'Portrait' or 'Landscape'
+  final bool isRemoved;
 
   const PagePrintSetting({
     required this.pageNumber,
     required this.printType,
     this.unitPrice = 0.0,
+    this.orientation = 'Portrait',
+    this.isRemoved = false,
   });
 
   bool get isColor => printType == PrintType.color;
   bool get isBw => printType == PrintType.bw;
+  bool get isExcluded => isRemoved;
+  bool get isLandscape => orientation.toLowerCase() == 'landscape';
 
   PagePrintSetting copyWith({
     int? pageNumber,
     PrintType? printType,
     double? unitPrice,
+    String? orientation,
+    bool? isRemoved,
   }) {
     return PagePrintSetting(
       pageNumber: pageNumber ?? this.pageNumber,
       printType: printType ?? this.printType,
       unitPrice: unitPrice ?? this.unitPrice,
+      orientation: orientation ?? this.orientation,
+      isRemoved: isRemoved ?? this.isRemoved,
     );
   }
 
   Map<String, dynamic> toMap() => {
     'pageNumber': pageNumber,
+    'page_number': pageNumber,
     'printType': printType.name,
+    'print_type': printType.name,
     'unitPrice': unitPrice,
+    'unit_price': unitPrice,
+    'orientation': orientation,
+    'isColor': isColor,
+    'is_color': isColor,
+    'isBw': isBw,
+    'is_bw': isBw,
+    'isRemoved': isRemoved,
+    'is_removed': isRemoved,
   };
 
-  factory PagePrintSetting.fromMap(Map<String, dynamic> map) {
+  Map<String, dynamic> toJson() => toMap();
+
+  factory PagePrintSetting.fromMap(Map<String, dynamic>? map) {
+    if (map == null) {
+      return const PagePrintSetting(
+        pageNumber: 1,
+        printType: PrintType.bw,
+        unitPrice: 0.0,
+        orientation: 'Portrait',
+        isRemoved: false,
+      );
+    }
+    final rawPageNum = map['pageNumber'] ?? map['page_number'] ?? 1;
+    final int pageNum = rawPageNum is int
+        ? rawPageNum
+        : int.tryParse('$rawPageNum') ?? 1;
+
+    final rawPrice = map['unitPrice'] ?? map['unit_price'] ?? 0.0;
+    final double price = rawPrice is num
+        ? rawPrice.toDouble()
+        : double.tryParse('$rawPrice') ?? 0.0;
+
+    final rawRemoved =
+        map['isRemoved'] ??
+        map['is_removed'] ??
+        map['isExcluded'] ??
+        map['is_excluded'] ??
+        false;
+    final bool removed =
+        rawRemoved == true || rawRemoved.toString().toLowerCase() == 'true';
+
     return PagePrintSetting(
-      pageNumber: (map['pageNumber'] ?? map['page_number'] ?? 1) is int
-          ? (map['pageNumber'] ?? map['page_number'] ?? 1) as int
-          : int.tryParse('${map['pageNumber'] ?? map['page_number']}') ?? 1,
+      pageNumber: pageNum,
       printType: PrintType.fromString(
         map['printType']?.toString() ?? map['print_type']?.toString(),
       ),
-      unitPrice: (map['unitPrice'] ?? map['unit_price'] ?? 0.0) is num
-          ? (map['unitPrice'] ?? map['unit_price'] as num).toDouble()
-          : double.tryParse('${map['unitPrice'] ?? map['unit_price']}') ?? 0.0,
+      unitPrice: price,
+      orientation: (map['orientation'] ?? 'Portrait').toString(),
+      isRemoved: removed,
     );
   }
+
+  factory PagePrintSetting.fromJson(Map<String, dynamic>? json) =>
+      PagePrintSetting.fromMap(json);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PagePrintSetting &&
+          runtimeType == other.runtimeType &&
+          pageNumber == other.pageNumber &&
+          printType == other.printType &&
+          unitPrice == other.unitPrice &&
+          orientation == other.orientation &&
+          isRemoved == other.isRemoved;
+
+  @override
+  int get hashCode =>
+      Object.hash(pageNumber, printType, unitPrice, orientation, isRemoved);
+
+  @override
+  String toString() =>
+      'PagePrintSetting(page: $pageNumber, type: ${printType.name}, orientation: $orientation, price: $unitPrice, removed: $isRemoved)';
 }
 
 /// Formats a list of page numbers into readable range string
 /// e.g. [3, 18, 19, 20, 21, 22, 47, 78, 79, 80, 81, 111] -> "3, 18-22, 47, 78-81, 111"
 String formatPageRanges(List<int> pages) {
   if (pages.isEmpty) return '';
-  final sorted = List<int>.from(pages.where((p) => p > 0)).toSet().toList()..sort();
+  final sorted = List<int>.from(pages.where((p) => p > 0)).toSet().toList()
+    ..sort();
   if (sorted.isEmpty) return '';
   final List<String> ranges = [];
   int start = sorted[0];
@@ -344,6 +418,13 @@ class PrintOrder {
   final int? colorPageCount;
   final List<int> colorPageNumbers;
   final List<PagePrintSetting> pageSettings;
+  final String? originalFileName;
+  final String? pageSelection;
+  final bool isDeletedFromQueue;
+  final bool isDeletedByStudent;
+  final String? removalReason;
+  final DateTime? removedAt;
+  final String? removedBy;
 
   const PrintOrder({
     required this.id,
@@ -384,13 +465,120 @@ class PrintOrder {
     this.colorPageCount,
     this.colorPageNumbers = const [],
     this.pageSettings = const [],
+    this.originalFileName,
+    this.pageSelection,
+    this.isDeletedFromQueue = false,
+    this.isDeletedByStudent = false,
+    this.removalReason,
+    this.removedAt,
+    this.removedBy,
   });
 
-  int get fileSize => fileSizeBytes;
-  int get calculatedBwPages => bwPageCount ?? (color ? 0 : pages);
-  int get calculatedColorPages => colorPageCount ?? (color ? pages : 0);
-  bool get hasPerDetailPageConfig => pageSettings.isNotEmpty || colorPageNumbers.isNotEmpty;
+  String? get effectiveRemovalReason {
+    if (removalReason != null && removalReason!.trim().isNotEmpty) {
+      return removalReason;
+    }
+    if (cancellationReason != null && cancellationReason!.trim().isNotEmpty) {
+      return cancellationReason;
+    }
+    return null;
+  }
+
+  String? get effectiveRejectionReason {
+    if (cancellationReason != null && cancellationReason!.trim().isNotEmpty) {
+      return cancellationReason!.trim();
+    }
+    if (removalReason != null && removalReason!.trim().isNotEmpty) {
+      return removalReason!.trim();
+    }
+    return null;
+  }
+
+  int get calculatedBwPages =>
+      bwPageCount ??
+      (hasPerDetailPageConfig ? resolvedBwPages.length : (color ? 0 : pages));
+  int get calculatedColorPages =>
+      colorPageCount ??
+      (hasPerDetailPageConfig
+          ? resolvedColorPages.length
+          : (color ? pages : 0));
+  bool get hasPerDetailPageConfig =>
+      pageSettings.isNotEmpty || colorPageNumbers.isNotEmpty;
   String get formattedColorPageRanges => formatPageRanges(colorPageNumbers);
+
+  List<int> get resolvedColorPages {
+    if (pageSettings.isNotEmpty) {
+      final list =
+          pageSettings.where((p) => p.isColor).map((p) => p.pageNumber).toList()
+            ..sort();
+      if (list.isNotEmpty) return list;
+    }
+    if (colorPageNumbers.isNotEmpty) {
+      return List<int>.from(colorPageNumbers)..sort();
+    }
+    if (color) {
+      return List.generate(pages, (i) => i + 1);
+    }
+    return const [];
+  }
+
+  List<int> get resolvedBwPages {
+    if (pageSettings.isNotEmpty) {
+      final list =
+          pageSettings.where((p) => p.isBw).map((p) => p.pageNumber).toList()
+            ..sort();
+      if (list.isNotEmpty) return list;
+    }
+    if (colorPageNumbers.isNotEmpty) {
+      final colorSet = colorPageNumbers.toSet();
+      return List.generate(
+        pages,
+        (i) => i + 1,
+      ).where((p) => !colorSet.contains(p)).toList();
+    }
+    if (!color) {
+      return List.generate(pages, (i) => i + 1);
+    }
+    return const [];
+  }
+
+  String get colorPagesDisplayText {
+    final list = resolvedColorPages;
+    return list.isEmpty ? 'None' : list.join(', ');
+  }
+
+  String get bwPagesDisplayText {
+    final list = resolvedBwPages;
+    return list.isEmpty ? 'None' : list.join(', ');
+  }
+
+  int get originalPagesCount {
+    if (priceSnapshot != null) {
+      if (priceSnapshot!['totalDocumentPages'] != null) {
+        return _int(priceSnapshot!['totalDocumentPages'], pages);
+      }
+      if (priceSnapshot!['original_pages'] != null) {
+        return _int(priceSnapshot!['original_pages'], pages);
+      }
+      if (priceSnapshot!['originalPages'] != null) {
+        return _int(priceSnapshot!['originalPages'], pages);
+      }
+    }
+    final removed = removedPagesCount;
+    return pages + removed;
+  }
+
+  int get removedPagesCount {
+    if (priceSnapshot != null) {
+      if (priceSnapshot!['removedPages'] != null) {
+        return _int(priceSnapshot!['removedPages'], 0);
+      }
+      if (priceSnapshot!['removed_pages'] != null) {
+        return _int(priceSnapshot!['removed_pages'], 0);
+      }
+    }
+    return 0;
+  }
 
   factory PrintOrder.fromMap(String id, Map<String, dynamic> d) => PrintOrder(
     id: id,
@@ -414,9 +602,7 @@ class PrintOrder {
       PaperType.values,
       d['paperType'] is String
           ? d['paperType']
-          : (d['paper_type'] is String
-              ? d['paper_type']
-              : d['paperTypeEnum']),
+          : (d['paper_type'] is String ? d['paper_type'] : d['paperTypeEnum']),
       PaperType.standard75Gsm,
     ),
     bindingType: _enumValue(
@@ -439,8 +625,12 @@ class PrintOrder {
     createdAt:
         DateTime.tryParse('${d['createdAt'] ?? d['created_at']}') ??
         DateTime.now(),
-    cancellationReason: (d['cancellationReason'] ?? d['cancellation_reason'])
-        ?.toString(),
+    cancellationReason:
+        (d['cancellationReason'] ??
+                d['cancellation_reason'] ??
+                d['rejectionReason'] ??
+                d['rejection_reason'])
+            ?.toString(),
     cancellationBy: (d['cancellationBy'] ?? d['cancellation_by'])?.toString(),
     refundStatus: (d['refundStatus'] ?? d['refund_status'])?.toString(),
     paymentMethod: (d['paymentMethod'] ?? d['payment_method'])?.toString(),
@@ -459,67 +649,92 @@ class PrintOrder {
             '${d['paidAt'] ?? d['paid_at'] ?? d['paymentTime'] ?? d['payment_time']}',
           )
         : null,
-    isDownloaded: (d['isDownloaded'] ?? d['is_downloaded']) == true,
-    isPurged: (d['isPurged'] ?? d['is_purged']) == true,
+    isDownloaded: d['isDownloaded'] == true || d['is_downloaded'] == true,
+    isPurged:
+        d['isPurged'] == true ||
+        d['is_purged'] == true ||
+        d['isPurged'] == 'true' ||
+        d['is_purged'] == 'true',
     priceSnapshot: d['priceSnapshot'] != null && d['priceSnapshot'] is Map
         ? Map<String, dynamic>.from(d['priceSnapshot'])
         : null,
-    specialInstructions: (d['specialInstructions'] ??
-            d['special_instructions'] ??
-            '')
-        .toString(),
-    paperTypeName: (d['paperTypeName'] ??
-            d['paper_type_name'] ??
-            (d['paperType'] is Map ? d['paperType']['name'] : (d['paperType'] is String ? d['paperType'] : '')) ??
-            '')
-        .toString(),
-    gsmName: (d['gsmName'] ??
-            d['gsm_name'] ??
-            (d['gsm'] is Map ? d['gsm']['name'] : (d['gsm'] is String ? d['gsm'] : '')) ??
-            '')
-        .toString(),
-    bindingName: (d['bindingName'] ??
-            d['binding_type_name'] ??
-            d['bindingType'] ??
-            '')
-        .toString(),
+    specialInstructions:
+        (d['specialInstructions'] ?? d['special_instructions'] ?? '')
+            .toString(),
+    paperTypeName:
+        (d['paperTypeName'] ??
+                d['paper_type_name'] ??
+                (d['paperType'] is Map
+                    ? d['paperType']['name']
+                    : (d['paperType'] is String ? d['paperType'] : '')) ??
+                '')
+            .toString(),
+    gsmName:
+        (d['gsmName'] ??
+                d['gsm_name'] ??
+                (d['gsm'] is Map
+                    ? d['gsm']['name']
+                    : (d['gsm'] is String ? d['gsm'] : '')) ??
+                '')
+            .toString(),
+    bindingName:
+        (d['bindingName'] ?? d['binding_type_name'] ?? d['bindingType'] ?? '')
+            .toString(),
     bwPageCount: d['bw_page_count'] != null
         ? _int(d['bw_page_count'], 0)
         : (d['bwPageCount'] != null
-            ? _int(d['bwPageCount'], 0)
-            : (d['priceSnapshot'] is Map && d['priceSnapshot']['bw_page_count'] != null
-                ? _int(d['priceSnapshot']['bw_page_count'], 0)
-                : null)),
+              ? _int(d['bwPageCount'], 0)
+              : (d['priceSnapshot'] is Map &&
+                        d['priceSnapshot']['bw_page_count'] != null
+                    ? _int(d['priceSnapshot']['bw_page_count'], 0)
+                    : null)),
     colorPageCount: d['color_page_count'] != null
         ? _int(d['color_page_count'], 0)
         : (d['colorPageCount'] != null
-            ? _int(d['colorPageCount'], 0)
-            : (d['priceSnapshot'] is Map && d['priceSnapshot']['color_page_count'] != null
-                ? _int(d['priceSnapshot']['color_page_count'], 0)
-                : null)),
+              ? _int(d['colorPageCount'], 0)
+              : (d['priceSnapshot'] is Map &&
+                        d['priceSnapshot']['color_page_count'] != null
+                    ? _int(d['priceSnapshot']['color_page_count'], 0)
+                    : null)),
     colorPageNumbers: d['color_page_numbers'] is List
-        ? (d['color_page_numbers'] as List).map((e) => _int(e, 0)).where((e) => e > 0).toList()
+        ? (d['color_page_numbers'] as List)
+              .map((e) => _int(e, 0))
+              .where((e) => e > 0)
+              .toList()
         : (d['colorPageNumbers'] is List
-            ? (d['colorPageNumbers'] as List).map((e) => _int(e, 0)).where((e) => e > 0).toList()
-            : (d['priceSnapshot'] is Map && d['priceSnapshot']['color_page_numbers'] is List
-                ? (d['priceSnapshot']['color_page_numbers'] as List).map((e) => _int(e, 0)).where((e) => e > 0).toList()
-                : const [])),
-    pageSettings: d['page_settings'] is List
-        ? (d['page_settings'] as List)
-            .whereType<Map>()
-            .map((e) => PagePrintSetting.fromMap(Map<String, dynamic>.from(e)))
-            .toList()
-        : (d['pageSettings'] is List
-            ? (d['pageSettings'] as List)
-                .whereType<Map>()
-                .map((e) => PagePrintSetting.fromMap(Map<String, dynamic>.from(e)))
-                .toList()
-            : (d['priceSnapshot'] is Map && d['priceSnapshot']['page_settings'] is List
-                ? (d['priceSnapshot']['page_settings'] as List)
-                    .whereType<Map>()
-                    .map((e) => PagePrintSetting.fromMap(Map<String, dynamic>.from(e)))
+              ? (d['colorPageNumbers'] as List)
+                    .map((e) => _int(e, 0))
+                    .where((e) => e > 0)
                     .toList()
-                : const [])),
+              : (d['priceSnapshot'] is Map &&
+                        d['priceSnapshot']['color_page_numbers'] is List
+                    ? (d['priceSnapshot']['color_page_numbers'] as List)
+                          .map((e) => _int(e, 0))
+                          .where((e) => e > 0)
+                          .toList()
+                    : const [])),
+    pageSettings: _parsePageSettings(
+      d['page_settings'] ??
+          d['pageSettings'] ??
+          (d['priceSnapshot'] is Map
+              ? d['priceSnapshot']['page_settings']
+              : null),
+    ),
+    originalFileName: (d['originalFileName'] ?? d['original_file_name'])
+        ?.toString(),
+    pageSelection: (d['pageSelection'] ?? d['page_selection'])?.toString(),
+    isDeletedFromQueue:
+        d['isDeletedFromQueue'] == true ||
+        d['is_deleted_from_queue'] == true ||
+        d['isDeletedFromQueue'] == 'true' ||
+        d['is_deleted_from_queue'] == 'true',
+    isDeletedByStudent:
+        (d['isDeletedByStudent'] ?? d['is_deleted_by_student']) == true,
+    removalReason: (d['removalReason'] ?? d['removal_reason'])?.toString(),
+    removedAt: d['removedAt'] != null || d['removed_at'] != null
+        ? DateTime.tryParse('${d['removedAt'] ?? d['removed_at']}')
+        : null,
+    removedBy: (d['removedBy'] ?? d['removed_by'])?.toString(),
   );
 
   String? get transactionId => transactionReference;
@@ -533,6 +748,7 @@ class PrintOrder {
     'studentEmail': studentEmail,
     'fileName': fileName,
     'fileUrl': fileUrl,
+    'file_url': fileUrl,
     'fileSizeBytes': fileSizeBytes,
     'pages': pages,
     'copies': copies,
@@ -550,7 +766,11 @@ class PrintOrder {
     'status': status.name,
     'createdAt': createdAt.toIso8601String(),
     'cancellationReason': cancellationReason,
+    'cancellation_reason': cancellationReason,
+    'rejectionReason': cancellationReason,
+    'rejection_reason': cancellationReason,
     'cancellationBy': cancellationBy,
+    'cancellation_by': cancellationBy,
     'refundStatus': refundStatus,
     'paymentMethod': paymentMethod,
     'transactionReference': transactionReference,
@@ -560,6 +780,7 @@ class PrintOrder {
     'paymentTime': paidAt?.toIso8601String(),
     'isDownloaded': isDownloaded,
     'isPurged': isPurged,
+    'is_purged': isPurged,
     'priceSnapshot': priceSnapshot,
     'specialInstructions': specialInstructions,
     'paperTypeName': paperTypeName,
@@ -569,6 +790,18 @@ class PrintOrder {
     'color_page_count': colorPageCount ?? calculatedColorPages,
     'color_page_numbers': colorPageNumbers,
     'page_settings': pageSettings.map((s) => s.toMap()).toList(),
+    'originalFileName': originalFileName,
+    'pageSelection': pageSelection,
+    'isDeletedFromQueue': isDeletedFromQueue,
+    'is_deleted_from_queue': isDeletedFromQueue,
+    'isDeletedByStudent': isDeletedByStudent,
+    'is_deleted_by_student': isDeletedByStudent,
+    'removalReason': removalReason,
+    'removal_reason': removalReason,
+    'removedAt': removedAt?.toIso8601String(),
+    'removed_at': removedAt?.toIso8601String(),
+    'removedBy': removedBy,
+    'removed_by': removedBy,
   };
 
   PrintOrder copyWith({
@@ -610,6 +843,13 @@ class PrintOrder {
     int? colorPageCount,
     List<int>? colorPageNumbers,
     List<PagePrintSetting>? pageSettings,
+    String? originalFileName,
+    String? pageSelection,
+    bool? isDeletedFromQueue,
+    bool? isDeletedByStudent,
+    String? removalReason,
+    DateTime? removedAt,
+    String? removedBy,
   }) {
     return PrintOrder(
       id: id ?? this.id,
@@ -650,10 +890,32 @@ class PrintOrder {
       colorPageCount: colorPageCount ?? this.colorPageCount,
       colorPageNumbers: colorPageNumbers ?? this.colorPageNumbers,
       pageSettings: pageSettings ?? this.pageSettings,
+      originalFileName: originalFileName ?? this.originalFileName,
+      pageSelection: pageSelection ?? this.pageSelection,
+      isDeletedFromQueue: isDeletedFromQueue ?? this.isDeletedFromQueue,
+      isDeletedByStudent: isDeletedByStudent ?? this.isDeletedByStudent,
+      removalReason: removalReason ?? this.removalReason,
+      removedAt: removedAt ?? this.removedAt,
+      removedBy: removedBy ?? this.removedBy,
     );
   }
 
   bool get studentCanCancel => status == OrderStatus.pending;
+
+  static List<PagePrintSetting> _parsePageSettings(dynamic raw) {
+    if (raw is! List) return const [];
+    final List<PagePrintSetting> result = [];
+    for (final item in raw) {
+      if (item is PagePrintSetting) {
+        result.add(item);
+      } else if (item is Map) {
+        try {
+          result.add(PagePrintSetting.fromMap(Map<String, dynamic>.from(item)));
+        } catch (_) {}
+      }
+    }
+    return result;
+  }
 
   static int _int(dynamic value, int fallback) =>
       value is num ? value.toInt() : int.tryParse('$value') ?? fallback;
@@ -664,9 +926,14 @@ class PrintOrder {
     dynamic value,
     T fallback,
   ) {
-    final str = value?.toString();
-    for (final item in values) {
-      if (item.name == str) return item;
+    if (value is T && values.contains(value)) return value;
+    final str = value?.toString().trim();
+    if (str != null && str.isNotEmpty) {
+      final clean = str.contains('.') ? str.split('.').last : str;
+      final strLower = clean.toLowerCase();
+      for (final item in values) {
+        if (item.name.toLowerCase() == strLower) return item;
+      }
     }
     if (T == PaymentStatus) {
       final s = str?.toString().trim() ?? '';
@@ -1137,7 +1404,8 @@ class AdditionalServiceItem {
 class PrintConfigItem {
   final String id;
   final String name;
-  final String category; // 'paperType', 'gsm', 'binding', 'finishing', 'additionalService'
+  final String
+  category; // 'paperType', 'gsm', 'binding', 'finishing', 'additionalService'
   final double price;
   final bool enabled;
   final DateTime createdAt;
@@ -1502,8 +1770,7 @@ class LiveShopPricing {
     if (rawConfig is List && rawConfig.isNotEmpty) {
       items = rawConfig
           .map(
-            (e) =>
-                PrintConfigItem.fromMap(Map<String, dynamic>.from(e as Map)),
+            (e) => PrintConfigItem.fromMap(Map<String, dynamic>.from(e as Map)),
           )
           .toList();
     } else {
@@ -1700,12 +1967,11 @@ class ShopPaymentAccount {
     required this.updatedAt,
   });
 
-  String get payeeName =>
-      paymentDisplayName.trim().isNotEmpty
-          ? paymentDisplayName.trim()
-          : (accountHolderName.trim().isNotEmpty
-              ? accountHolderName.trim()
-              : 'Campus Xerox');
+  String get payeeName => paymentDisplayName.trim().isNotEmpty
+      ? paymentDisplayName.trim()
+      : (accountHolderName.trim().isNotEmpty
+            ? accountHolderName.trim()
+            : 'Campus Xerox');
 
   bool get isActive => isOnlinePaymentEnabled;
 
@@ -1719,9 +1985,7 @@ class ShopPaymentAccount {
   }
 
   /// Whether online payment is properly configured and enabled
-  bool get isConfigured =>
-      upiId.trim().isNotEmpty &&
-      isOnlinePaymentEnabled;
+  bool get isConfigured => upiId.trim().isNotEmpty && isOnlinePaymentEnabled;
 
   static ShopPaymentAccount empty() => ShopPaymentAccount(
     shopId: 'campus-xerox',
@@ -1738,33 +2002,50 @@ class ShopPaymentAccount {
     updatedAt: DateTime.now(),
   );
 
-  factory ShopPaymentAccount.fromMap(
-    Map<String, dynamic> d,
-  ) => ShopPaymentAccount(
-    shopId: (d['shop_id'] ?? d['shopId'] ?? 'campus-xerox').toString(),
-    accountHolderName:
-        (d['accountHolderName'] ?? d['account_holder_name'] ?? d['payee_name'] ?? d['payeeName'] ?? '').toString(),
-    bankName: (d['bankName'] ?? d['bank_name'] ?? d['payment_app'] ?? d['paymentApp'] ?? '').toString(),
-    accountNumber: (d['accountNumber'] ?? d['account_number'] ?? '').toString(),
-    ifsc: (d['ifsc'] ?? d['ifscCode'] ?? '').toString(),
-    branchName: (d['branchName'] ?? d['branch_name'] ?? '').toString(),
-    upiId: (d['upiId'] ?? d['upi_id'] ?? '').toString(),
-    paymentDisplayName:
-        (d['paymentDisplayName'] ?? d['payment_display_name'] ?? d['payee_name'] ?? d['payeeName'] ?? '').toString(),
-    paymentApp: (d['paymentApp'] ?? d['payment_app'] ?? 'Google Pay').toString(),
-    qrImageUrl: (d['qrImageUrl'] ?? d['qr_image_url'] ?? '').toString(),
-    isOnlinePaymentEnabled:
-        d['isOnlinePaymentEnabled'] == true ||
-        d['is_online_payment_enabled'] == true ||
-        d['isActive'] == true ||
-        d['is_active'] == true,
-    createdAt: d['createdAt'] != null
-        ? DateTime.tryParse('${d['createdAt']}')
-        : null,
-    updatedAt:
-        DateTime.tryParse('${d['updatedAt'] ?? d['updated_at']}') ??
-        DateTime.now(),
-  );
+  factory ShopPaymentAccount.fromMap(Map<String, dynamic> d) =>
+      ShopPaymentAccount(
+        shopId: (d['shop_id'] ?? d['shopId'] ?? 'campus-xerox').toString(),
+        accountHolderName:
+            (d['accountHolderName'] ??
+                    d['account_holder_name'] ??
+                    d['payee_name'] ??
+                    d['payeeName'] ??
+                    '')
+                .toString(),
+        bankName:
+            (d['bankName'] ??
+                    d['bank_name'] ??
+                    d['payment_app'] ??
+                    d['paymentApp'] ??
+                    '')
+                .toString(),
+        accountNumber: (d['accountNumber'] ?? d['account_number'] ?? '')
+            .toString(),
+        ifsc: (d['ifsc'] ?? d['ifscCode'] ?? '').toString(),
+        branchName: (d['branchName'] ?? d['branch_name'] ?? '').toString(),
+        upiId: (d['upiId'] ?? d['upi_id'] ?? '').toString(),
+        paymentDisplayName:
+            (d['paymentDisplayName'] ??
+                    d['payment_display_name'] ??
+                    d['payee_name'] ??
+                    d['payeeName'] ??
+                    '')
+                .toString(),
+        paymentApp: (d['paymentApp'] ?? d['payment_app'] ?? 'Google Pay')
+            .toString(),
+        qrImageUrl: (d['qrImageUrl'] ?? d['qr_image_url'] ?? '').toString(),
+        isOnlinePaymentEnabled:
+            d['isOnlinePaymentEnabled'] == true ||
+            d['is_online_payment_enabled'] == true ||
+            d['isActive'] == true ||
+            d['is_active'] == true,
+        createdAt: d['createdAt'] != null
+            ? DateTime.tryParse('${d['createdAt']}')
+            : null,
+        updatedAt:
+            DateTime.tryParse('${d['updatedAt'] ?? d['updated_at']}') ??
+            DateTime.now(),
+      );
 
   Map<String, dynamic> toMap() => {
     'shopId': shopId,
@@ -1789,7 +2070,9 @@ class ShopPaymentAccount {
     'shop_id': shopId.isNotEmpty ? shopId : 'campus-xerox',
     'upi_id': upiId.trim(),
     'payee_name': payeeName,
-    'payment_app': paymentApp.trim().isNotEmpty ? paymentApp.trim() : 'Google Pay',
+    'payment_app': paymentApp.trim().isNotEmpty
+        ? paymentApp.trim()
+        : 'Google Pay',
     'qr_image_url': qrImageUrl.trim(),
     'is_active': isOnlinePaymentEnabled,
     'updated_at': updatedAt.toIso8601String(),
@@ -1877,10 +2160,11 @@ class ShopServiceItem {
     price: (d['price'] is num)
         ? (d['price'] as num).toDouble()
         : double.tryParse('${d['price']}') ?? 0.0,
-    pricingUnit:
-        (d['pricing_unit'] ?? d['pricingUnit'] ?? 'per_page').toString(),
+    pricingUnit: (d['pricing_unit'] ?? d['pricingUnit'] ?? 'per_page')
+        .toString(),
     isActive: d['is_active'] == true || d['isActive'] == true,
-    updatedAt: DateTime.tryParse('${d['updated_at'] ?? d['updatedAt']}') ??
+    updatedAt:
+        DateTime.tryParse('${d['updated_at'] ?? d['updatedAt']}') ??
         DateTime.now(),
   );
 

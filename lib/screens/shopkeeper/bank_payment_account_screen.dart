@@ -38,6 +38,7 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
   bool _isEditing = false;
   bool _saving = false;
   bool _uploadingQr = false;
+  bool _showFullAccount = false;
   String _qrImageUrl = '';
   ShopPaymentAccount _currentAccount = ShopPaymentAccount.empty();
 
@@ -56,8 +57,12 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
   void _populateFields(ShopPaymentAccount acc) {
     _upiIdCtrl.text = acc.upiId;
     _displayNameCtrl.text = acc.payeeName;
-    _bankCtrl.text = acc.paymentApp.isNotEmpty ? acc.paymentApp : (acc.bankName.isNotEmpty ? acc.bankName : 'Google Pay');
-    _holderCtrl.text = acc.accountHolderName;
+    _bankCtrl.text = acc.bankName.isNotEmpty
+        ? acc.bankName
+        : (acc.paymentApp.isNotEmpty ? acc.paymentApp : 'State Bank of India');
+    _holderCtrl.text = acc.accountHolderName.isNotEmpty
+        ? acc.accountHolderName
+        : acc.payeeName;
     _accountNumberCtrl.text = acc.accountNumber;
     _ifscCtrl.text = acc.ifsc;
     _isOnlinePaymentEnabled = acc.isOnlinePaymentEnabled;
@@ -124,7 +129,9 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                 ),
                 backgroundColor: const Color(0xFF00C853),
                 behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             );
           }
@@ -148,14 +155,71 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
   Future<void> _savePaymentAccount() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final accNum = _accountNumberCtrl.text.trim();
+    final masked = accNum.length > 4
+        ? '•••• •••• ${accNum.substring(accNum.length - 4)}'
+        : (accNum.isNotEmpty ? '•••• $accNum' : 'Not configured');
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.security_rounded, color: Color(0xFF6750F4)),
+            SizedBox(width: 8),
+            Text('Confirm Payment Details'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Confirm updating the shop\'s receiving payment account:',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            Text('• Account Holder: ${_holderCtrl.text.trim()}'),
+            Text('• Bank Name: ${_bankCtrl.text.trim()}'),
+            Text('• Account Number: $masked'),
+            Text('• IFSC Code: ${_ifscCtrl.text.trim().toUpperCase()}'),
+            Text('• Receiving UPI ID: ${_upiIdCtrl.text.trim().toLowerCase()}'),
+            const SizedBox(height: 12),
+            const Text(
+              'New student payments will be sent directly to this verified destination. Previous orders remain unchanged.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm & Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => _saving = true);
     try {
       final updated = _currentAccount.copyWith(
         upiId: _upiIdCtrl.text.trim().toLowerCase(),
-        paymentDisplayName: _displayNameCtrl.text.trim(),
-        paymentApp: _bankCtrl.text.trim().isNotEmpty ? _bankCtrl.text.trim() : 'Google Pay',
+        paymentDisplayName: _displayNameCtrl.text.trim().isNotEmpty
+            ? _displayNameCtrl.text.trim()
+            : _holderCtrl.text.trim(),
+        paymentApp: _bankCtrl.text.trim().isNotEmpty
+            ? _bankCtrl.text.trim()
+            : 'Google Pay',
         bankName: _bankCtrl.text.trim(),
-        accountHolderName: _displayNameCtrl.text.trim(),
+        accountHolderName: _holderCtrl.text.trim(),
+        accountNumber: _accountNumberCtrl.text.trim(),
+        ifsc: _ifscCtrl.text.trim().toUpperCase(),
         qrImageUrl: _qrImageUrl,
         isOnlinePaymentEnabled: _isOnlinePaymentEnabled,
         updatedAt: DateTime.now(),
@@ -185,7 +249,9 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
             ),
             backgroundColor: const Color(0xFF00C853),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
@@ -244,10 +310,17 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
   Widget _buildHeader(ThemeData theme, bool isDark) {
     final canPop = Navigator.canPop(context);
     return Container(
-      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 14, 20, 16),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        MediaQuery.of(context).padding.top + 14,
+        20,
+        16,
+      ),
       decoration: BoxDecoration(
         color: theme.scaffoldBackgroundColor,
-        border: Border(bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.15))),
+        border: Border(
+          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.15)),
+        ),
       ),
       child: Row(
         children: [
@@ -263,7 +336,11 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
               color: theme.colorScheme.primary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(Icons.account_balance_rounded, color: theme.colorScheme.primary, size: 22),
+            child: Icon(
+              Icons.account_balance_rounded,
+              color: theme.colorScheme.primary,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -271,18 +348,23 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Bank & Payment Account',
+                  'Bank & Payment Settings',
                   style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
                 ),
                 Text(
-                  'Configured UPI & Scannable QR for Student Payments',
-                  style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                  'Shopkeeper Portal → Settings → Bank & Payment Settings',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
           ),
           IconButton(
-            icon: Icon(isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded),
+            icon: Icon(
+              isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+            ),
             onPressed: widget.onToggleTheme,
           ),
         ],
@@ -291,7 +373,9 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
   }
 
   Widget _buildSavedOverviewCard(ThemeData theme) {
-    final lastUpdatedFormatted = DateFormat('dd MMM yyyy, hh:mm a').format(_currentAccount.updatedAt);
+    final lastUpdatedFormatted = DateFormat(
+      'dd MMM yyyy, hh:mm a',
+    ).format(_currentAccount.updatedAt);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -301,7 +385,9 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+            side: BorderSide(
+              color: theme.colorScheme.primary.withValues(alpha: 0.3),
+            ),
           ),
           child: Padding(
             padding: const EdgeInsets.all(22),
@@ -319,7 +405,11 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                             color: Colors.purple.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.qr_code_2_rounded, color: Colors.purple, size: 22),
+                          child: const Icon(
+                            Icons.qr_code_2_rounded,
+                            color: Colors.purple,
+                            size: 22,
+                          ),
                         ),
                         const SizedBox(width: 10),
                         const Column(
@@ -327,11 +417,17 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                           children: [
                             Text(
                               'Current QR Code',
-                              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                              ),
                             ),
                             Text(
                               'Scanned by students for Online Pay',
-                              style: TextStyle(fontSize: 11.5, color: Colors.grey),
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.grey,
+                              ),
                             ),
                           ],
                         ),
@@ -360,25 +456,42 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: theme.colorScheme.primary,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       onPressed: _uploadingQr ? null : _pickAndUploadQr,
                       icon: _uploadingQr
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
                             )
                           : const Icon(Icons.upload_file_rounded, size: 18),
-                      label: Text(_uploadingQr ? 'Uploading QR…' : 'Upload / Change QR Code'),
+                      label: Text(
+                        _uploadingQr
+                            ? 'Uploading QR…'
+                            : 'Upload / Change QR Code',
+                      ),
                     ),
                     if (_currentAccount.qrImageUrl.isNotEmpty) ...[
                       const SizedBox(width: 12),
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         onPressed: () => _showFullscreenQr(context, theme),
                         icon: const Icon(Icons.fullscreen_rounded, size: 18),
@@ -409,7 +522,7 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Payment Account Details',
+                      'Bank & Payment Account',
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 15,
@@ -417,22 +530,31 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: _currentAccount.isOnlinePaymentEnabled
                             ? Colors.green.withValues(alpha: 0.12)
                             : Colors.orange.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: _currentAccount.isOnlinePaymentEnabled ? Colors.green : Colors.orange,
+                          color: _currentAccount.isOnlinePaymentEnabled
+                              ? Colors.green
+                              : Colors.orange,
                         ),
                       ),
                       child: Text(
-                        _currentAccount.isOnlinePaymentEnabled ? 'ACTIVE ✓' : 'DISABLED',
+                        _currentAccount.isOnlinePaymentEnabled
+                            ? 'ACTIVE ✓'
+                            : 'DISABLED',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
-                          color: _currentAccount.isOnlinePaymentEnabled ? Colors.green[800] : Colors.orange[800],
+                          color: _currentAccount.isOnlinePaymentEnabled
+                              ? Colors.green[800]
+                              : Colors.orange[800],
                         ),
                       ),
                     ),
@@ -442,11 +564,49 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                 const Divider(),
                 const SizedBox(height: 12),
 
-                _infoRow('UPI ID', _currentAccount.upiId, theme, isProminent: true),
+                _infoRow(
+                  'Receiving UPI ID',
+                  _currentAccount.upiId,
+                  theme,
+                  isProminent: true,
+                ),
                 const SizedBox(height: 12),
-                _infoRow('Payee Name', _currentAccount.payeeName, theme, isProminent: true),
+                _infoRow(
+                  'Payee / Shop Name',
+                  _currentAccount.payeeName,
+                  theme,
+                  isProminent: true,
+                ),
                 const SizedBox(height: 12),
-                _infoRow('Payment App / Bank', _currentAccount.paymentApp, theme),
+                _infoRow(
+                  'Account Holder Name',
+                  _currentAccount.accountHolderName.isNotEmpty
+                      ? _currentAccount.accountHolderName
+                      : _currentAccount.payeeName,
+                  theme,
+                ),
+                const SizedBox(height: 12),
+                _infoRow(
+                  'Bank Name',
+                  _currentAccount.bankName.isNotEmpty
+                      ? _currentAccount.bankName
+                      : _currentAccount.paymentApp,
+                  theme,
+                ),
+                const SizedBox(height: 12),
+                _maskedAccountRow(
+                  'Bank Account Number',
+                  _currentAccount.accountNumber,
+                  theme,
+                ),
+                const SizedBox(height: 12),
+                _infoRow(
+                  'IFSC Code',
+                  _currentAccount.ifsc.isNotEmpty
+                      ? _currentAccount.ifsc
+                      : 'Not configured',
+                  theme,
+                ),
                 const SizedBox(height: 12),
                 _infoRow('Last Updated', lastUpdatedFormatted, theme),
               ],
@@ -517,11 +677,18 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                       errorBuilder: (context, error, stackTrace) => Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey.shade400),
+                          Icon(
+                            Icons.broken_image_rounded,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'QR Image Failed to Load',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
                           ),
                         ],
                       ),
@@ -529,7 +696,11 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                   : Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.qr_code_scanner_rounded, size: 64, color: Colors.grey.shade400),
+                        Icon(
+                          Icons.qr_code_scanner_rounded,
+                          size: 64,
+                          color: Colors.grey.shade400,
+                        ),
                         const SizedBox(height: 8),
                         Text(
                           'No QR Uploaded Yet',
@@ -542,7 +713,10 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                         const SizedBox(height: 4),
                         Text(
                           'Upload your payment QR below',
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade500,
+                          ),
                         ),
                       ],
                     ),
@@ -550,7 +724,9 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            _currentAccount.payeeName.isNotEmpty ? _currentAccount.payeeName : 'Campus Xerox',
+            _currentAccount.payeeName.isNotEmpty
+                ? _currentAccount.payeeName
+                : 'Campus Xerox',
             style: const TextStyle(
               color: Colors.black87,
               fontWeight: FontWeight.w900,
@@ -559,7 +735,9 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
           ),
           const SizedBox(height: 2),
           Text(
-            _currentAccount.upiId.isNotEmpty ? _currentAccount.upiId : 'No UPI ID configured',
+            _currentAccount.upiId.isNotEmpty
+                ? _currentAccount.upiId
+                : 'No UPI ID configured',
             style: TextStyle(
               color: Colors.grey.shade800,
               fontWeight: FontWeight.w700,
@@ -581,7 +759,9 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
-              side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+              side: BorderSide(
+                color: theme.colorScheme.primary.withValues(alpha: 0.3),
+              ),
             ),
             child: Padding(
               padding: const EdgeInsets.all(22),
@@ -610,52 +790,144 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // UPI ID Field
+                  // 1. Account Holder Name Field
                   TextFormField(
-                    controller: _upiIdCtrl,
+                    controller: _holderCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Merchant UPI ID *',
-                      hintText: 'e.g. campusxerox@okaxis',
-                      prefixIcon: const Icon(Icons.alternate_email_rounded),
-                      helperText: 'Students will pay directly to this UPI address',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      labelText: 'Account Holder Name *',
+                      hintText: 'e.g. Ramesh Kumar',
+                      prefixIcon: const Icon(Icons.badge_rounded),
+                      helperText: 'Full legal name as per bank records',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     validator: (val) {
-                      if (val == null || val.trim().isEmpty) return 'UPI ID is required.';
-                      if (!val.contains('@')) return 'Enter a valid UPI ID (e.g., example@okaxis).';
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Account Holder Name is required.';
+                      }
                       return null;
                     },
                   ),
                   const SizedBox(height: 16),
 
-                  // Payee Name Field
-                  TextFormField(
-                    controller: _displayNameCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'Payee Name *',
-                      hintText: 'e.g. Campus Xerox Shop',
-                      prefixIcon: const Icon(Icons.person_rounded),
-                      helperText: 'Displayed as merchant name in UPI apps',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) return 'Payee Name is required.';
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Payment App / Bank Name Field
+                  // 2. Bank Name Field
                   TextFormField(
                     controller: _bankCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Payment App / Bank Name *',
-                      hintText: 'e.g. Google Pay / State Bank of India',
+                      labelText: 'Bank Name *',
+                      hintText: 'e.g. State Bank of India / HDFC Bank',
                       prefixIcon: const Icon(Icons.account_balance_rounded),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     validator: (val) {
-                      if (val == null || val.trim().isEmpty) return 'Payment App or Bank Name is required.';
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Bank Name is required.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3. Bank Account Number Field
+                  TextFormField(
+                    controller: _accountNumberCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Bank Account Number *',
+                      hintText: 'e.g. 10293847561',
+                      prefixIcon: const Icon(Icons.numbers_rounded),
+                      helperText:
+                          'Account number will be masked in display for security',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Bank Account Number is required.';
+                      }
+                      final clean = val.trim();
+                      if (clean.length < 9 || clean.length > 18) {
+                        return 'Account number must be between 9 and 18 digits.';
+                      }
+                      if (!RegExp(r'^[0-9]+$').hasMatch(clean)) {
+                        return 'Account number must contain only numeric digits.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 4. IFSC Code Field
+                  TextFormField(
+                    controller: _ifscCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: InputDecoration(
+                      labelText: 'IFSC Code *',
+                      hintText: 'e.g. SBIN0001234',
+                      prefixIcon: const Icon(Icons.pin_rounded),
+                      helperText: '11-character bank branch IFSC code',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'IFSC Code is required.';
+                      }
+                      final clean = val.trim().toUpperCase();
+                      if (clean.length != 11) {
+                        return 'IFSC code must be exactly 11 characters.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 5. Receiving UPI ID Field
+                  TextFormField(
+                    controller: _upiIdCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Merchant Receiving UPI ID *',
+                      hintText: 'e.g. campusxerox@okaxis',
+                      prefixIcon: const Icon(Icons.alternate_email_rounded),
+                      helperText:
+                          'Students will pay directly to this verified UPI address',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'UPI ID is required.';
+                      }
+                      if (!val.contains('@') || val.trim().length < 5) {
+                        return 'Enter a valid UPI ID (e.g. example@okaxis).';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 6. Payee Display Name Field
+                  TextFormField(
+                    controller: _displayNameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Payee / Shop Display Name *',
+                      hintText: 'e.g. Campus Xerox Shop',
+                      prefixIcon: const Icon(Icons.storefront_rounded),
+                      helperText: 'Displayed as merchant name in UPI apps',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Payee Name is required.';
+                      }
                       return null;
                     },
                   ),
@@ -678,7 +950,9 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surfaceContainer,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: theme.dividerColor.withValues(alpha: 0.2)),
+                      border: Border.all(
+                        color: theme.dividerColor.withValues(alpha: 0.2),
+                      ),
                     ),
                     child: Row(
                       children: [
@@ -695,9 +969,18 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                                     width: 64,
                                     height: 64,
                                     fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.qr_code_2_rounded, size: 36),
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            const Icon(
+                                              Icons.qr_code_2_rounded,
+                                              size: 36,
+                                            ),
                                   )
-                                : const Icon(Icons.qr_code_scanner_rounded, size: 36, color: Colors.grey),
+                                : const Icon(
+                                    Icons.qr_code_scanner_rounded,
+                                    size: 36,
+                                    color: Colors.grey,
+                                  ),
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -706,15 +989,23 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                _qrImageUrl.isNotEmpty ? 'QR Code Attached' : 'No QR Code Uploaded',
-                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+                                _qrImageUrl.isNotEmpty
+                                    ? 'QR Code Attached'
+                                    : 'No QR Code Uploaded',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13.5,
+                                ),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 _qrImageUrl.isNotEmpty
                                     ? 'Payment QR code image attached'
                                     : 'Upload a clear screenshot of your UPI QR code',
-                                style: TextStyle(fontSize: 11.5, color: theme.colorScheme.onSurfaceVariant),
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ],
                           ),
@@ -725,10 +1016,18 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                               ? const SizedBox(
                                   width: 14,
                                   height: 14,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Icons.upload_file_rounded, size: 16),
-                          label: Text(_uploadingQr ? 'Uploading…' : (_qrImageUrl.isNotEmpty ? 'Change' : 'Upload')),
+                          label: Text(
+                            _uploadingQr
+                                ? 'Uploading…'
+                                : (_qrImageUrl.isNotEmpty
+                                      ? 'Change'
+                                      : 'Upload'),
+                          ),
                         ),
                       ],
                     ),
@@ -738,10 +1037,16 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                   // Online Payment Toggle
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Accept Online Payments', style: TextStyle(fontWeight: FontWeight.w800)),
-                    subtitle: const Text('Allow students to pay online using this UPI account'),
+                    title: const Text(
+                      'Accept Online Payments',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: const Text(
+                      'Allow students to pay online using this UPI account',
+                    ),
                     value: _isOnlinePaymentEnabled,
-                    onChanged: (val) => setState(() => _isOnlinePaymentEnabled = val),
+                    onChanged: (val) =>
+                        setState(() => _isOnlinePaymentEnabled = val),
                   ),
                   const SizedBox(height: 24),
 
@@ -753,19 +1058,27 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: theme.colorScheme.primary,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                       onPressed: _saving ? null : _savePaymentAccount,
                       icon: _saving
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
                             )
                           : const Icon(Icons.save_rounded),
                       label: Text(
                         _saving ? 'Saving…' : 'Save Payment Details',
-                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                   ),
@@ -804,7 +1117,10 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Colors.black87),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.black87,
+                    ),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
@@ -818,9 +1134,14 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
                         width: 280,
                         height: 280,
                         fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) => const Center(
-                          child: Icon(Icons.broken_image_rounded, size: 64, color: Colors.grey),
-                        ),
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Center(
+                              child: Icon(
+                                Icons.broken_image_rounded,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                            ),
                       )
                     : const SizedBox(
                         width: 280,
@@ -844,7 +1165,10 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
               ),
               Text(
                 _currentAccount.upiId,
-                style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.black54),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black54,
+                ),
               ),
             ],
           ),
@@ -853,7 +1177,12 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
     );
   }
 
-  Widget _infoRow(String label, String value, ThemeData theme, {bool isProminent = false}) {
+  Widget _infoRow(
+    String label,
+    String value,
+    ThemeData theme, {
+    bool isProminent = false,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -873,10 +1202,70 @@ class _BankPaymentAccountScreenState extends State<BankPaymentAccountScreen> {
             style: TextStyle(
               fontSize: isProminent ? 14 : 13,
               fontWeight: isProminent ? FontWeight.w900 : FontWeight.w700,
-              color: isProminent ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+              color: isProminent
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurface,
             ),
             textAlign: TextAlign.end,
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _maskedAccountRow(String label, String value, ThemeData theme) {
+    final clean = value.trim();
+    final display = clean.isEmpty
+        ? 'Not configured'
+        : (_showFullAccount
+              ? clean
+              : (clean.length > 4
+                    ? '•••• •••• •••• ${clean.substring(clean.length - 4)}'
+                    : '•••• $clean'));
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              display,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: _showFullAccount ? 0.5 : 1.2,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            if (clean.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                iconSize: 18,
+                tooltip: _showFullAccount
+                    ? 'Hide account number'
+                    : 'Show account number',
+                icon: Icon(
+                  _showFullAccount
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                onPressed: () =>
+                    setState(() => _showFullAccount = !_showFullAccount),
+              ),
+            ],
+          ],
         ),
       ],
     );

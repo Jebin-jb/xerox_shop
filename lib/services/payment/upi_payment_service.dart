@@ -27,10 +27,10 @@ class UpiPaymentService {
         : (shop?.upiId.trim() ?? '');
     final merchantName =
         (account != null && account.payeeName.trim().isNotEmpty)
-            ? account.payeeName.trim()
-            : (shop?.merchantName.trim().isNotEmpty == true
-                ? shop!.merchantName.trim()
-                : 'Campus Xerox');
+        ? account.payeeName.trim()
+        : (shop?.merchantName.trim().isNotEmpty == true
+              ? shop!.merchantName.trim()
+              : 'Campus Xerox');
 
     final txnNote = note ?? 'Campus Xerox Order $orderCode';
     final query = <String>[

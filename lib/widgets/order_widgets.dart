@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/app_models.dart';
 import 'glass.dart';
 
@@ -29,12 +30,14 @@ class OrderCard extends StatelessWidget {
   final PrintOrder order;
   final bool shopkeeper;
   final VoidCallback? onTap;
+  final VoidCallback? onDelete;
 
   const OrderCard({
     super.key,
     required this.order,
     this.shopkeeper = false,
     this.onTap,
+    this.onDelete,
   });
 
   @override
@@ -92,8 +95,12 @@ class OrderCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               StatusChip(
-                label: orderStatusLabel(order.status).toUpperCase(),
-                color: statusColor(order.status),
+                label: order.isDeletedFromQueue
+                    ? 'REMOVED BY SHOPKEEPER'
+                    : orderStatusLabel(order.status).toUpperCase(),
+                color: order.isDeletedFromQueue
+                    ? const Color(0xFFD32F2F)
+                    : statusColor(order.status),
               ),
             ],
           ),
@@ -147,7 +154,8 @@ class OrderCard extends StatelessWidget {
                   PaymentStatus.payment_submitted ||
                   PaymentStatus.verification_pending => 'VERIFYING',
                   PaymentStatus.payment_initiated => 'INITIATED',
-                  PaymentStatus.failed || PaymentStatus.payment_failed => 'FAILED',
+                  PaymentStatus.failed ||
+                  PaymentStatus.payment_failed => 'FAILED',
                   PaymentStatus.cancelled => 'CANCELLED',
                   PaymentStatus.unpaid => 'UNPAID',
                   PaymentStatus.refund_initiated => 'REFUND INIT',
@@ -158,15 +166,147 @@ class OrderCard extends StatelessWidget {
                   PaymentStatus.payment_submitted ||
                   PaymentStatus.verification_pending => Colors.orange,
                   PaymentStatus.payment_initiated => Colors.amber,
-                  PaymentStatus.failed || PaymentStatus.payment_failed => Colors.red,
+                  PaymentStatus.failed ||
+                  PaymentStatus.payment_failed => Colors.red,
                   PaymentStatus.cancelled => Colors.redAccent,
                   PaymentStatus.unpaid => Colors.orange,
                   PaymentStatus.refund_initiated => Colors.blueGrey,
                   PaymentStatus.refunded => Colors.teal,
                 },
               ),
+              if (onDelete != null) ...[
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                  label: const Text(
+                    'Delete',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
             ],
           ),
+          if (order.status == OrderStatus.rejected) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.redAccent.withValues(alpha: 0.25),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.cancel_outlined,
+                        size: 14,
+                        color: Colors.redAccent,
+                      ),
+                      SizedBox(width: 5),
+                      Text(
+                        'Order Rejected by Xerox Shop',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11.5,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    (order.effectiveRejectionReason != null &&
+                            order.effectiveRejectionReason!.isNotEmpty)
+                        ? 'Reason for Rejection: ${order.effectiveRejectionReason}'
+                        : 'Reason for Rejection: Not specified',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (order.isDeletedFromQueue) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.redAccent.withValues(alpha: 0.25),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline_rounded,
+                        size: 14,
+                        color: Colors.redAccent,
+                      ),
+                      const SizedBox(width: 5),
+                      const Text(
+                        'Removed by Shopkeeper',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11.5,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                      if (order.removedAt != null) ...[
+                        const Spacer(),
+                        Text(
+                          DateFormat(
+                            'dd/MM/yyyy hh:mm a',
+                          ).format(order.removedAt!),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    order.effectiveRemovalReason != null &&
+                            order.effectiveRemovalReason!.isNotEmpty
+                        ? 'Reason: ${order.effectiveRemovalReason}'
+                        : 'Reason: Removed from active queue by shopkeeper',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     ),

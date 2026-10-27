@@ -11,11 +11,14 @@
 /// to local persistent storage mode so you can demo and test the app immediately.
 class SupabaseConfig {
   /// Your Supabase Project URL (e.g., 'https://xyzcompany.supabase.co')
-  static const String supabaseUrl = 'https://rqhtabgmltxrrjkbdclv.supabase.co';
+  static const String supabaseUrl = 'https://oywophlrrxibdqszdooq.supabase.co';
 
-  /// Your Supabase Public Anonymous API Key (anon / public key)
-  static const String supabaseAnonKey =
-      'sb_publishable_wnuagRRdcBx3svBb5O42OQ_3ZPb8A3n';
+  /// Your Supabase Publishable API Key
+  static const String supabasePublishableKey =
+      'sb_publishable_JC1fypujiBSvrqE-WXnKqg_kEagzL5J';
+
+  /// Backwards-compatible alias for supabaseAnonKey
+  static const String supabaseAnonKey = supabasePublishableKey;
 
   /// Supabase Storage Bucket for print documents (PDF, DOCX, PPT, JPG, PNG up to 50MB)
   static const String documentsBucket = 'xerox-documents';
@@ -30,6 +33,8 @@ class SupabaseConfig {
   static bool get isConfigured =>
       supabaseUrl.isNotEmpty &&
       !supabaseUrl.contains('YOUR_SUPABASE_PROJECT_URL') &&
-      supabaseAnonKey.isNotEmpty &&
-      !supabaseAnonKey.contains('YOUR_SUPABASE_ANON_KEY');
+      supabasePublishableKey.isNotEmpty &&
+      !supabasePublishableKey.contains('YOUR_SUPABASE_ANON_KEY') &&
+      !supabasePublishableKey.contains('YOUR_SUPABASE_PUBLISHABLE_KEY') &&
+      !supabasePublishableKey.contains('PASTE_YOUR_PUBLISHABLE_KEY_HERE');
 }

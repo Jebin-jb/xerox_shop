@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../models/app_models.dart';
 import '../../services/data_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/firebase_payment_config_service.dart';
-import '../../services/payment/payment_models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/order_widgets.dart';
@@ -28,77 +28,13 @@ class ShopOrders extends StatefulWidget {
 class _ShopOrdersState extends State<ShopOrders> {
   final search = TextEditingController();
   OrderStatus? statusFilter;
-  final Set<String> _downloading = {};
+  final Set<String> _deleting = {};
+  final Set<String> _completing = {};
 
   @override
   void dispose() {
     search.dispose();
     super.dispose();
-  }
-
-  Future<void> _downloadAndPurge(PrintOrder o) async {
-    setState(() => _downloading.add(o.id));
-    try {
-      final storage = StorageService();
-      final bytes = await storage.downloadFile(o.fileUrl);
-      String? savedPath;
-      if (bytes != null && bytes.isNotEmpty) {
-        savedPath = await storage.saveFileToDevice(
-          fileName: o.fileName,
-          bytes: bytes,
-          orderCode: o.code,
-        );
-      }
-
-      // Auto-delete from cloud vault for student privacy
-      await storage.deleteFile(o.fileUrl);
-
-      await widget.dataService.updateOrder(o.id, {
-        'isDownloaded': true,
-        'isPurged': true,
-      });
-
-      if (mounted) {
-        final pathNotice = savedPath != null
-            ? 'Saved to: $savedPath'
-            : 'Saved to Downloads folder.';
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 4),
-            backgroundColor: Colors.teal[800],
-            content: Row(
-              children: [
-                const Icon(Icons.download_done_rounded, color: Colors.white),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Document "${o.fileName}" downloaded!',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '$pathNotice (Purged from cloud for privacy)',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _downloading.remove(o.id));
-    }
   }
 
   @override
@@ -108,8 +44,11 @@ class _ShopOrdersState extends State<ShopOrders> {
 
     return StreamBuilder<List<PrintOrder>>(
       stream: widget.dataService.allOrders(),
+      initialData: widget.dataService.allOrdersDirect,
       builder: (context, snap) {
-        var orders = snap.data ?? [];
+        var orders = (snap.data ?? [])
+            .where((x) => !x.isDeletedFromQueue)
+            .toList();
         final q = search.text.trim().toUpperCase();
         if (q.isNotEmpty) {
           orders = orders
@@ -126,1191 +65,848 @@ class _ShopOrdersState extends State<ShopOrders> {
           orders = orders.where((x) => x.status == statusFilter).toList();
         }
 
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
-          children: [
-            PageIntro(
-              title: 'Order Queue',
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: 'Shop UPI Payment Settings',
-                    icon: const Icon(Icons.qr_code_2_rounded),
-                    onPressed: () => _openPaymentSettingsDialog(context),
-                  ),
-                  IconButton(
-                    tooltip: isDark ? 'Light Mode' : 'Dark Mode',
-                    onPressed: widget.onToggleTheme,
-                    icon: Icon(
-                      isDark
-                          ? Icons.light_mode_rounded
-                          : Icons.dark_mode_rounded,
+        return RefreshIndicator(
+          onRefresh: () => widget.dataService.refreshOrders(),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(14, 16, 14, 120),
+            children: [
+              PageIntro(
+                title: 'Order Queue',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Shop UPI Payment Settings',
+                      icon: const Icon(Icons.qr_code_2_rounded),
+                      onPressed: () => _openPaymentSettingsDialog(context),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: 'Sign Out',
-                    onPressed: widget.onSignOut,
-                    icon: const Icon(
-                      Icons.logout_rounded,
-                      color: Colors.redAccent,
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: isDark ? 'Light Mode' : 'Dark Mode',
+                      onPressed: widget.onToggleTheme,
+                      icon: Icon(
+                        isDark
+                            ? Icons.light_mode_rounded
+                            : Icons.dark_mode_rounded,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // Search and filters
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: search,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: 'Search code (e.g. CX402), student, file…',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      suffixIcon: search.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear_rounded),
-                              onPressed: () => setState(() => search.clear()),
-                            )
-                          : null,
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Sign Out',
+                      onPressed: widget.onSignOut,
+                      icon: const Icon(
+                        Icons.logout_rounded,
+                        color: Colors.redAccent,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
+              ),
+              const SizedBox(height: 18),
 
-            // Status filter chips
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+              // Search and filters
+              Row(
                 children: [
-                  ChoiceChip(
-                    label: const Text('All Orders'),
-                    selected: statusFilter == null,
-                    onSelected: (_) => setState(() => statusFilter = null),
-                  ),
-                  const SizedBox(width: 8),
-                  ...OrderStatus.values.map(
-                    (s) => Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(orderStatusLabel(s)),
-                        selected: statusFilter == s,
-                        onSelected: (_) => setState(() => statusFilter = s),
+                  Expanded(
+                    child: TextField(
+                      controller: search,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText:
+                            'Search 4-digit code (e.g. 5727), student, file…',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: search.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded),
+                                onPressed: () => setState(() => search.clear()),
+                              )
+                            : null,
                       ),
                     ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 18),
+              const SizedBox(height: 12),
 
-            if (snap.connectionState == ConnectionState.waiting &&
-                !snap.hasData)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: CircularProgressIndicator(),
+              // Status filter chips
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ChoiceChip(
+                      label: const Text('All Orders'),
+                      selected: statusFilter == null,
+                      onSelected: (_) => setState(() => statusFilter = null),
+                    ),
+                    const SizedBox(width: 8),
+                    ...OrderStatus.values.map(
+                      (s) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(orderStatusLabel(s)),
+                          selected: statusFilter == s,
+                          onSelected: (_) => setState(() => statusFilter = s),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              )
-            else if (orders.isEmpty)
-              GlassPanel(
-                padding: const EdgeInsets.all(32),
-                child: Center(
-                  child: Text(
-                    'No orders match your filter.',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 18),
+
+              if (snap.connectionState == ConnectionState.waiting &&
+                  !snap.hasData)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (orders.isEmpty)
+                GlassPanel(
+                  padding: const EdgeInsets.all(32),
+                  child: Center(
+                    child: Text(
+                      'No orders match your filter.',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
-              )
-            else
-              ...orders.map(
-                (o) => Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: FadeSlide(
-                    child: GlassPanel(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Distinct Top Banner based on Payment Mode & Status
-                          if (o.paymentMode == PaymentMode.counter) ...[
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: o.paymentStatus == PaymentStatus.paid
-                                    ? const Color(
-                                        0xFF00C853,
-                                      ).withValues(alpha: 0.12)
-                                    : Colors.amber.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: o.paymentStatus == PaymentStatus.paid
-                                      ? const Color(0xFF00C853)
-                                      : Colors.amber[700]!,
-                                  width: 1.2,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    o.paymentStatus == PaymentStatus.paid
-                                        ? Icons.check_circle_rounded
-                                        : Icons.storefront_rounded,
-                                    color: o.paymentStatus == PaymentStatus.paid
-                                        ? const Color(0xFF00C853)
-                                        : Colors.amber[800],
-                                    size: 18,
+                )
+              else
+                ...orders.map(
+                  (o) => Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: FadeSlide(
+                      child: GlassPanel(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 1. Header: Code Badge and Status Chip
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Wrap(
-                                      spacing: 8,
-                                      crossAxisAlignment:
-                                          WrapCrossAlignment.center,
-                                      children: [
-                                        Text(
-                                          'PAY AT COUNTER',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 11.5,
-                                            color:
-                                                o.paymentStatus ==
-                                                    PaymentStatus.paid
-                                                ? const Color(0xFF00C853)
-                                                : Colors.amber[900],
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                o.paymentStatus ==
-                                                    PaymentStatus.paid
-                                                ? const Color(0xFF00C853)
-                                                : Colors.amber[800],
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            o.paymentStatus ==
-                                                    PaymentStatus.paid
-                                                ? 'PAID ✓'
-                                                : 'UNPAID',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 10,
-                                              color: Colors.white,
-                                              letterSpacing: 0.5,
-                                            ),
-                                          ),
-                                        ),
-                                        if (o.paymentStatus !=
-                                            PaymentStatus.paid)
-                                          Text(
-                                            'WAITING FOR STUDENT',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 11,
-                                              color: Colors.amber[900],
-                                            ),
-                                          ),
-                                      ],
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primary.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppTheme.primary.withValues(
+                                        alpha: 0.3,
+                                      ),
                                     ),
                                   ),
-                                  Text(
-                                    'Collection Code: ${o.code}',
-                                    style: TextStyle(
+                                  child: Text(
+                                    o.code,
+                                    style: const TextStyle(
                                       fontWeight: FontWeight.w900,
-                                      fontSize: 12.5,
-                                      color:
-                                          o.paymentStatus == PaymentStatus.paid
-                                          ? const Color(0xFF00C853)
-                                          : Colors.amber[900],
+                                      fontSize: 13.5,
                                       letterSpacing: 0.8,
+                                      color: AppTheme.primary,
                                     ),
                                   ),
-                                ],
+                                ),
+                                StatusChip(
+                                  label: orderStatusLabel(
+                                    o.status,
+                                  ).toUpperCase(),
+                                  color: statusColor(o.status),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+
+                            // 2. File Name (top-level View Document action removed)
+                            Text(
+                              o.fileName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
                               ),
                             ),
-                          ] else ...[
-                            // Online Payment banner
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 8,
+                            const SizedBox(height: 4),
+
+                            // 3. Student & Timestamp Subtitle
+                            Text(
+                              '${o.studentName}${o.studentId.isNotEmpty ? " • Reg: ${o.studentId}" : ""}'
+                              ' • ${DateFormat('dd MMM, hh:mm a').format(o.createdAt)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
-                              decoration: BoxDecoration(
-                                color: o.paymentStatus == PaymentStatus.paid
-                                    ? const Color(
-                                        0xFF00C853,
-                                      ).withValues(alpha: 0.12)
-                                    : (o.paymentStatus ==
-                                              PaymentStatus.verification_pending
-                                          ? Colors.orange.withValues(
-                                              alpha: 0.12,
-                                            )
-                                          : Colors.red.withValues(alpha: 0.12)),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: o.paymentStatus == PaymentStatus.paid
-                                      ? const Color(0xFF00C853)
-                                      : (o.paymentStatus ==
-                                                PaymentStatus
-                                                    .verification_pending
-                                            ? Colors.orange
-                                            : Colors.red),
-                                  width: 1.2,
+                            ),
+                            const SizedBox(height: 10),
+
+                            const SizedBox(height: 4),
+
+                            // 4. Detailed Print Summary (Matches Student New Print Order page)
+                            _buildShopPrintSummary(o, Theme.of(context)),
+
+                            // 5. Special Instructions (Only if non-empty)
+                            if (o.specialInstructions.trim().isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
                                 ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        o.paymentStatus == PaymentStatus.paid
-                                            ? Icons.verified_rounded
-                                            : (o.paymentStatus ==
-                                                      PaymentStatus
-                                                          .verification_pending
-                                                  ? Icons.schedule_rounded
-                                                  : Icons.error_outline_rounded),
-                                        color: o.paymentStatus == PaymentStatus.paid
-                                            ? const Color(0xFF00C853)
-                                            : (o.paymentStatus ==
-                                                      PaymentStatus
-                                                          .verification_pending
-                                                  ? Colors.orange[800]
-                                                  : Colors.red),
-                                        size: 18,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Payment Mode: ONLINE',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 11.5,
-                                          color:
-                                              o.paymentStatus == PaymentStatus.paid
-                                              ? const Color(0xFF00C853)
-                                              : (o.paymentStatus ==
-                                                        PaymentStatus
-                                                            .verification_pending
-                                                    ? Colors.orange[900]
-                                                    : Colors.red),
-                                          letterSpacing: 0.5,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color:
-                                              o.paymentStatus == PaymentStatus.paid
-                                              ? const Color(0xFF00C853)
-                                              : ((o.paymentStatus ==
-                                                          PaymentStatus
-                                                              .payment_submitted ||
-                                                      o.paymentStatus ==
-                                                          PaymentStatus
-                                                              .verification_pending)
-                                                  ? Colors.orange[800]
-                                                  : (o.paymentStatus ==
-                                                          PaymentStatus
-                                                              .payment_initiated
-                                                      ? Colors.amber[800]
-                                                      : Colors.red)),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          o.paymentStatus == PaymentStatus.paid
-                                              ? 'PAID ✓'
-                                              : ((o.paymentStatus ==
-                                                          PaymentStatus
-                                                              .payment_submitted ||
-                                                      o.paymentStatus ==
-                                                          PaymentStatus
-                                                              .verification_pending)
-                                                  ? 'PAYMENT SUBMITTED (VERIFY)'
-                                                  : (o.paymentStatus ==
-                                                          PaymentStatus
-                                                              .payment_initiated
-                                                      ? 'INITIATED (AWAITING UTR)'
-                                                      : (o.paymentStatus ==
-                                                              PaymentStatus
-                                                                  .cancelled
-                                                          ? 'CANCELLED'
-                                                          : 'UNPAID'))),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 10.5,
-                                            color: Colors.white,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.amber.withValues(alpha: 0.3),
                                   ),
-                                  if ((o.transactionReference ?? '').isNotEmpty) ...[
-                                    const SizedBox(height: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: Colors.orange.shade300,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.notes_rounded,
+                                      size: 14,
+                                      color: Colors.amber[900],
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Note: ${o.specialInstructions.trim()}',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.amber[900],
                                         ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(
-                                            Icons.tag_rounded,
-                                            size: 14,
-                                            color: Colors.orange,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'UTR: ${o.transactionReference}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 11,
-                                              color: Colors.black87,
-                                            ),
-                                          ),
-                                        ],
                                       ),
                                     ),
                                   ],
-                                ],
+                                ),
                               ),
-                            ),
-                          ],
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                            ],
+
+                            // 6. Cancellation note (if cancelled/rejected)
+                            if (o.status == OrderStatus.cancelled ||
+                                o.status == OrderStatus.rejected) ...[
+                              const SizedBox(height: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
+                                  horizontal: 10,
+                                  vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.primary.withValues(
-                                    alpha: 0.12,
+                                  color: Colors.redAccent.withValues(
+                                    alpha: 0.1,
                                   ),
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: AppTheme.primary.withValues(
+                                    color: Colors.redAccent.withValues(
                                       alpha: 0.3,
                                     ),
                                   ),
                                 ),
                                 child: Text(
-                                  o.code,
+                                  'Cancelled by ${o.cancellationBy ?? "User"}: ${o.cancellationReason ?? "No reason"}'
+                                  '${o.refundStatus != null && o.refundStatus != "NONE" ? " • (${o.refundStatus})" : ""}',
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                    letterSpacing: 1.2,
-                                    color: AppTheme.primary,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      o.fileName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      '${o.studentName} • Reg: ${o.studentId.isNotEmpty ? o.studentId : "N/A"}',
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                    if (o.studentEmail.isNotEmpty)
-                                      Text(
-                                        o.studentEmail,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  StatusChip(
-                                    label: orderStatusLabel(
-                                      o.status,
-                                    ).toUpperCase(),
-                                    color: statusColor(o.status),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          if (o.status == OrderStatus.cancelled ||
-                              o.status == OrderStatus.rejected) ...[
-                            const SizedBox(height: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.redAccent.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: Colors.redAccent.withValues(
-                                    alpha: 0.3,
-                                  ),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.info_outline_rounded,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
                                     color: Colors.redAccent,
-                                    size: 16,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Cancelled by: ${o.cancellationBy ?? "Student"}'
-                                      '${o.cancellationReason != null ? " • Reason: ${o.cancellationReason}" : ""}'
-                                      '${o.refundStatus != null && o.refundStatus != "NONE" ? " • (${o.refundStatus == 'REFUND_INITIATED' ? 'Refund Initiated' : o.refundStatus})" : ""}',
-                                      style: const TextStyle(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.redAccent,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 14),
-
-                          // Specs row
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 6,
-                            children: [
-                              _specTag(
-                                Icons.auto_stories_rounded,
-                                '${o.pages} pages × ${o.copies} ${o.copies == 1 ? "copy" : "copies"}',
-                              ),
-                              _specTag(
-                                Icons.palette_outlined,
-                                o.calculatedColorPages > 0 && o.calculatedBwPages > 0
-                                    ? 'Mixed (${o.calculatedBwPages} B&W, ${o.calculatedColorPages} Color)'
-                                    : (o.color ? 'Color' : 'B&W'),
-                              ),
-                              _specTag(
-                                Icons.flip_rounded,
-                                o.doubleSided ? 'Double-Sided' : 'Single-Sided',
-                              ),
-                              _specTag(
-                                Icons.description_rounded,
-                                o.paperTypeName.isNotEmpty
-                                    ? o.paperTypeName
-                                    : o.paperType.name,
-                              ),
-                              if (o.gsmName.isNotEmpty)
-                                _specTag(
-                                  Icons.line_weight_rounded,
-                                  o.gsmName,
                                 ),
-                              if (o.bindingName.isNotEmpty &&
-                                  o.bindingName.toLowerCase() != 'none')
-                                _specTag(
-                                  Icons.menu_book_rounded,
-                                  o.bindingName,
-                                )
-                              else if (o.bindingType != BindingType.none)
-                                _specTag(
-                                  Icons.menu_book_rounded,
-                                  o.bindingType.name,
-                                ),
-                              if (o.lamination)
-                                _specTag(Icons.layers_outlined, 'Laminated'),
+                              ),
                             ],
-                          ),
-                          const SizedBox(height: 10),
 
-                          // Per-Page Print Configuration Panel for Shopkeeper
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: o.calculatedColorPages > 0
-                                  ? const Color(0xFF8B5CF6).withValues(alpha: 0.08)
-                                  : Colors.blueGrey.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: o.calculatedColorPages > 0
-                                    ? const Color(0xFF8B5CF6).withValues(alpha: 0.25)
-                                    : Colors.blueGrey.withValues(alpha: 0.2),
-                                width: 1.1,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            const SizedBox(height: 12),
+                            const Divider(height: 1),
+                            const SizedBox(height: 12),
+
+                            // 7. Payment Info (Download button permanently removed from card)
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.tune_rounded,
-                                      size: 15,
-                                      color: o.calculatedColorPages > 0
-                                          ? const Color(0xFF8B5CF6)
-                                          : Colors.blueGrey,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Order #${o.code} Page Settings',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 12,
-                                        color: o.calculatedColorPages > 0
-                                            ? const Color(0xFF8B5CF6)
-                                            : Colors.blueGrey,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 7,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: theme.colorScheme.surface,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: theme.dividerColor.withValues(alpha: 0.2),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        'Total: ${o.pages}p',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.blueGrey.withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        'B&W Pages: ${o.calculatedBwPages}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 11.5,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: o.calculatedColorPages > 0
-                                            ? const Color(0xFF8B5CF6).withValues(alpha: 0.18)
-                                            : Colors.grey.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        'Color Pages: ${o.calculatedColorPages}',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 11.5,
-                                          color: o.calculatedColorPages > 0
-                                              ? const Color(0xFF8B5CF6)
-                                              : Colors.grey,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (o.calculatedColorPages > 0) ...[
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'Color Pages: ',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 12,
-                                          color: Color(0xFF8B5CF6),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          o.formattedColorPageRanges,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                                const SizedBox(height: 8),
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
+                                _paymentBadge(o),
+                                if (o.isPurged)
+                                  Container(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
+                                      horizontal: 8,
                                       vertical: 4,
                                     ),
-                                    visualDensity: VisualDensity.compact,
-                                    side: BorderSide(
-                                      color: o.calculatedColorPages > 0
-                                          ? const Color(0xFF8B5CF6)
-                                          : theme.dividerColor,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(
+                                        context,
+                                      ).dividerColor.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
                                     ),
-                                  ),
-                                  onPressed: () => _showPerPageDetailsDialog(context, o),
-                                  icon: const Icon(Icons.list_alt_rounded, size: 15),
-                                  label: const Text(
-                                    'VIEW PER-PAGE DETAILS',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 11,
-                                      letterSpacing: 0.4,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-
-                          // Special Instructions Box
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: o.specialInstructions.trim().isNotEmpty
-                                  ? Colors.amber.withValues(alpha: 0.12)
-                                  : theme.colorScheme.surfaceContainerHighest
-                                      .withValues(alpha: 0.35),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: o.specialInstructions.trim().isNotEmpty
-                                    ? Colors.amber.withValues(alpha: 0.45)
-                                    : theme.dividerColor.withValues(alpha: 0.2),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.notes_rounded,
-                                      size: 15,
-                                      color:
-                                          o.specialInstructions
-                                                  .trim()
-                                                  .isNotEmpty
-                                              ? Colors.amber[800]
-                                              : theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Special Instructions',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 11.5,
-                                        letterSpacing: 0.3,
-                                        color:
-                                            o.specialInstructions
-                                                    .trim()
-                                                    .isNotEmpty
-                                                ? Colors.amber[900]
-                                                : theme
-                                                    .colorScheme
-                                                    .onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                const Divider(height: 6, thickness: 0.5),
-                                const SizedBox(height: 4),
-                                Text(
-                                  o.specialInstructions.trim().isNotEmpty
-                                      ? o.specialInstructions.trim()
-                                      : 'No special instructions.',
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight:
-                                        o.specialInstructions
-                                                .trim()
-                                                .isNotEmpty
-                                            ? FontWeight.w600
-                                            : FontWeight.normal,
-                                    fontStyle:
-                                        o.specialInstructions
-                                                .trim()
-                                                .isNotEmpty
-                                            ? FontStyle.normal
-                                            : FontStyle.italic,
-                                    color: theme.colorScheme.onSurface,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          const Divider(height: 1),
-                          const SizedBox(height: 12),
-
-                          // Payment & Download Bar
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'TOTAL: ₹${o.total.toStringAsFixed(2)}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 15,
-                                        color: AppTheme.primary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Row(
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Icon(
-                                          o.paymentStatus == PaymentStatus.paid
-                                              ? Icons.check_circle_rounded
-                                              : (o.paymentStatus ==
-                                                        PaymentStatus
-                                                            .verification_pending
-                                                    ? Icons.schedule_rounded
-                                                    : Icons.pending_rounded),
-                                          size: 13,
-                                          color:
-                                              o.paymentStatus ==
-                                                  PaymentStatus.paid
-                                              ? Colors.green
-                                              : (o.paymentStatus ==
-                                                        PaymentStatus
-                                                            .verification_pending
-                                                    ? Colors.orange
-                                                    : Colors.red),
+                                          Icons.shield_outlined,
+                                          size: 12,
+                                          color: Colors.teal,
                                         ),
-                                        const SizedBox(width: 4),
-                                        Flexible(
-                                          child: Text(
-                                            o.paymentMode == PaymentMode.counter
-                                                ? (o.paymentStatus ==
-                                                          PaymentStatus.paid
-                                                      ? 'Paid at Counter'
-                                                      : 'Pay at Counter (Waiting for Student)')
-                                                : (o.paymentStatus ==
-                                                          PaymentStatus.paid
-                                                      ? (o.paymentMethod != null
-                                                            ? 'Paid via ${PaymentAppMethod.fromDbCode(o.paymentMethod).displayName}'
-                                                            : 'Online: PAID')
-                                                      : (o.paymentStatus ==
-                                                                PaymentStatus
-                                                                    .verification_pending
-                                                            ? 'Online: Verification Pending'
-                                                            : 'Online: ${o.paymentStatus.name.toUpperCase()}')),
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 11.5,
-                                              fontWeight: FontWeight.w700,
-                                              color:
-                                                  o.paymentStatus ==
-                                                      PaymentStatus.paid
-                                                  ? Colors.green
-                                                  : (o.paymentStatus ==
-                                                            PaymentStatus
-                                                                .verification_pending
-                                                        ? Colors.orange
-                                                        : Colors.red),
-                                            ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'File Purged',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.teal,
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
 
-                              // Download & Purge Action
-                              if (!o.isPurged)
-                                FilledButton.tonalIcon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: Colors.teal.withValues(
-                                      alpha: 0.15,
-                                    ),
-                                    foregroundColor: Colors.teal[800],
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                  ),
-                                  onPressed: _downloading.contains(o.id)
-                                      ? null
-                                      : () => _downloadAndPurge(o),
-                                  icon: _downloading.contains(o.id)
-                                      ? const SizedBox(
-                                          width: 14,
-                                          height: 14,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.cloud_download_rounded,
-                                          size: 16,
-                                        ),
-                                  label: Text(
-                                    _downloading.contains(o.id)
-                                        ? 'Saving…'
-                                        : (o.isDownloaded
-                                              ? 'Downloaded'
-                                              : 'Download & Purge'),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12.5,
-                                    ),
-                                  ),
-                                )
-                              else
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).dividerColor.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.shield_outlined,
-                                        size: 14,
-                                        color: Colors.teal,
-                                      ),
-                                      SizedBox(width: 6),
-                                      Text(
-                                        'File Purged (Privacy)',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.teal,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          _actions(o),
-                        ],
+                            // 8. Actions
+                            _actions(o),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         );
       },
     );
   }
 
-  Widget _actions(PrintOrder o) => Wrap(
-    spacing: 8,
-    runSpacing: 8,
-    alignment: WrapAlignment.end,
-    children: [
-      // In-App Document Preview / Print
-      if (!o.isPurged)
-        OutlinedButton.icon(
-          onPressed: () => _previewDocument(o),
-          icon: const Icon(Icons.visibility_rounded, size: 18),
-          label: const Text('View / Print in App'),
-        ),
-
-      // Delete File After Printing option
-      if (!o.isPurged)
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.redAccent,
-            side: const BorderSide(color: Colors.redAccent),
-          ),
-          onPressed: () => _deleteAfterPrinting(o),
-          icon: const Icon(Icons.delete_outline_rounded, size: 18),
-          label: const Text('Delete File (Printed)'),
-        ),
-
-      // Reject action
-      if (o.status == OrderStatus.pending)
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.red,
-            side: const BorderSide(color: Colors.redAccent, width: 1.5),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          ),
-          onPressed: () => _reject(o),
-          icon: const Icon(Icons.close_rounded, size: 18),
-          label: const Text(
-            'REJECT',
-            style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5),
+  Widget _paymentBadge(PrintOrder o) {
+    if (o.paymentMode == PaymentMode.counter) {
+      final isPaid = o.paymentStatus == PaymentStatus.paid;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: (isPaid ? const Color(0xFF00C853) : Colors.amber[800]!)
+              .withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isPaid ? const Color(0xFF00C853) : Colors.amber[800]!,
+            width: 1,
           ),
         ),
-
-      // Prominent "Mark as Paid at Counter" option
-      if (o.paymentMode == PaymentMode.counter &&
-          o.paymentStatus == PaymentStatus.unpaid &&
-          o.status != OrderStatus.cancelled &&
-          o.status != OrderStatus.rejected)
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: Colors.green[700],
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          ),
-          onPressed: () => _markPaidAtCounter(o),
-          icon: const Icon(Icons.check_circle_rounded, size: 18),
-          label: Text('Receive ₹${o.total.toStringAsFixed(0)} & Accept Order'),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isPaid ? Icons.check_circle_rounded : Icons.storefront_rounded,
+              size: 13,
+              color: isPaid ? const Color(0xFF00C853) : Colors.amber[800],
+            ),
+            const SizedBox(width: 4),
+            Text(
+              isPaid ? 'Counter: Paid' : 'Counter: Due',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: isPaid ? const Color(0xFF00C853) : Colors.amber[900],
+              ),
+            ),
+          ],
         ),
+      );
+    } else {
+      final isPaid = o.paymentStatus == PaymentStatus.paid;
+      final isPending =
+          o.paymentStatus == PaymentStatus.payment_submitted ||
+          o.paymentStatus == PaymentStatus.verification_pending;
+      final color = isPaid
+          ? const Color(0xFF00C853)
+          : (isPending ? Colors.orange[800]! : Colors.red);
+      final label = isPaid
+          ? 'Online: Paid'
+          : (isPending
+                ? (o.transactionReference != null &&
+                          o.transactionReference!.isNotEmpty
+                      ? 'Verify UTR: ${o.transactionReference}'
+                      : 'Verify Online Payment')
+                : (o.paymentStatus == PaymentStatus.payment_initiated
+                      ? 'Online: Initiated'
+                      : 'Online: Unpaid'));
 
-      // Online Order: Normal ACCEPT control ONLY for valid confirmed PAID online orders
-      if (o.status == OrderStatus.pending &&
-          o.paymentMode == PaymentMode.online &&
-          o.paymentStatus == PaymentStatus.paid)
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF00C853),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          ),
-          onPressed: () =>
-              widget.dataService.updateOrder(o.id, {'status': 'accepted'}),
-          icon: const Icon(Icons.check_rounded, size: 18),
-          label: const Text(
-            'ACCEPT',
-            style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5),
-          ),
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color, width: 1),
         ),
-
-      // Verify Payment Button (When student submitted UTR for verification)
-      if (o.status == OrderStatus.pending &&
-          o.paymentMode == PaymentMode.online &&
-          (o.paymentStatus == PaymentStatus.payment_submitted ||
-              o.paymentStatus == PaymentStatus.verification_pending))
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF00C853),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          ),
-          onPressed: () => _verifyOnlinePayment(o),
-          icon: const Icon(Icons.verified_rounded, size: 18),
-          label: const Text(
-            'VERIFY PAYMENT',
-            style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5),
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isPaid
+                  ? Icons.verified_rounded
+                  : (isPending
+                        ? Icons.schedule_rounded
+                        : Icons.pending_rounded),
+              size: 13,
+              color: color,
+            ),
+            const SizedBox(width: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
         ),
+      );
+    }
+  }
 
-      // If online order is pending but UNPAID or payment failed
-      if (o.status == OrderStatus.pending &&
-          o.paymentMode == PaymentMode.online &&
-          o.paymentStatus != PaymentStatus.paid &&
-          o.paymentStatus != PaymentStatus.payment_submitted &&
-          o.paymentStatus != PaymentStatus.verification_pending)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: (o.paymentStatus == PaymentStatus.payment_initiated
-                    ? Colors.amber
-                    : Colors.red)
-                .withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: (o.paymentStatus == PaymentStatus.payment_initiated
-                      ? Colors.amber
-                      : Colors.red)
-                  .withValues(alpha: 0.3),
+  Widget _actions(PrintOrder o) {
+    // 1. Rejected or Cancelled: No actions available. Bin is NOT required or shown.
+    if (o.status == OrderStatus.rejected || o.status == OrderStatus.cancelled) {
+      return const SizedBox.shrink();
+    }
+
+    // 2. Completed: Show View / Print (if document not purged) and Bin button
+    if (o.status == OrderStatus.completed) {
+      return Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        alignment: WrapAlignment.end,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (!o.isPurged && o.fileUrl.isNotEmpty)
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+              ),
+              onPressed: () => _previewDocument(o),
+              icon: const Icon(Icons.visibility_rounded, size: 16),
+              label: const Text('View / Print'),
+            ),
+          IconButton(
+            tooltip: 'Delete Document & Remove from Queue',
+            icon: _deleting.contains(o.id)
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Colors.redAccent,
+                      ),
+                    ),
+                  )
+                : const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.redAccent,
+                    size: 22,
+                  ),
+            onPressed: _deleting.contains(o.id)
+                ? null
+                : () => _handleBinClick(o),
+          ),
+        ],
+      );
+    }
+
+    // 3. Active stages: Pending, Accepted, Printing, Ready (Steps 1 & 3)
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        // View / Print (Available for pending, accepted, printing, ready if not purged)
+        if (!o.isPurged && o.fileUrl.isNotEmpty)
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+            onPressed: () => _previewDocument(o),
+            icon: const Icon(Icons.visibility_rounded, size: 16),
+            label: const Text('View / Print'),
+          ),
+
+        // PENDING: Reject & Accept actions. Bin button is HIDDEN. Printing actions are HIDDEN.
+        if (o.status == OrderStatus.pending) ...[
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red,
+              side: const BorderSide(color: Colors.redAccent, width: 1.2),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+            onPressed: () => _reject(o),
+            icon: const Icon(Icons.close_rounded, size: 16),
+            label: const Text(
+              'Reject',
+              style: TextStyle(fontWeight: FontWeight.w800),
             ),
           ),
-          child: Text(
-            o.paymentStatus == PaymentStatus.payment_initiated
-                ? 'Payment Initiated by Student (Awaiting UTR)'
-                : 'Online Payment ${o.paymentStatus.name.toUpperCase()} (Cannot Accept)',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 11.5,
-              color: o.paymentStatus == PaymentStatus.payment_initiated
-                  ? Colors.amber[900]
-                  : Colors.red,
+          if (o.paymentMode == PaymentMode.counter &&
+              o.paymentStatus == PaymentStatus.unpaid)
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.green[700],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+              ),
+              onPressed: () => _markPaidAtCounter(o),
+              icon: const Icon(Icons.check_circle_rounded, size: 16),
+              label: Text(
+                'Receive ₹${o.total.toStringAsFixed(0)} & Accept',
+                overflow: TextOverflow.ellipsis,
+              ),
+            )
+          else if (o.paymentMode == PaymentMode.online &&
+              (o.paymentStatus == PaymentStatus.payment_submitted ||
+                  o.paymentStatus == PaymentStatus.verification_pending))
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF00C853),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
+              onPressed: () => _verifyOnlinePayment(o),
+              icon: const Icon(Icons.verified_rounded, size: 16),
+              label: const Text(
+                'Verify Payment',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            )
+          else
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF00C853),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
+              onPressed: () =>
+                  widget.dataService.updateOrder(o.id, {'status': 'accepted'}),
+              icon: const Icon(Icons.check_rounded, size: 16),
+              label: const Text(
+                'Accept',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
             ),
-          ),
-        ),
+        ],
 
-      // Start Printing (Only available after order is accepted/paid)
-      if (o.status == OrderStatus.accepted)
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF0091EA),
+        // ACCEPTED: Start Printing. Reject is HIDDEN. Accept is HIDDEN. Bin is HIDDEN.
+        if (o.status == OrderStatus.accepted)
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0091EA),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            onPressed: () =>
+                widget.dataService.updateOrder(o.id, {'status': 'printing'}),
+            icon: const Icon(Icons.print_rounded, size: 16),
+            label: const Text('Start Printing'),
           ),
-          onPressed: () =>
-              widget.dataService.updateOrder(o.id, {'status': 'printing'}),
-          icon: const Icon(Icons.print_rounded, size: 18),
-          label: const Text('Start Printing'),
-        ),
 
-      // Mark Ready
-      if (o.status == OrderStatus.printing)
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF00C853),
+        // PRINTING: Mark Ready. Bin is HIDDEN.
+        if (o.status == OrderStatus.printing)
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF00C853),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            onPressed: () =>
+                widget.dataService.updateOrder(o.id, {'status': 'ready'}),
+            icon: const Icon(Icons.done_all_rounded, size: 16),
+            label: const Text('Mark Ready'),
           ),
-          onPressed: () =>
-              widget.dataService.updateOrder(o.id, {'status': 'ready'}),
-          icon: const Icon(Icons.done_all_rounded, size: 18),
-          label: const Text('Mark Ready for Pickup'),
-        ),
 
-      // Complete Order (Auto-cleans up residual files)
-      if (o.status == OrderStatus.ready)
-        FilledButton.icon(
-          style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
-          onPressed: () async {
-            await StorageService().deleteAfterPrinting(
-              fileUrl: o.fileUrl,
-              fileName: o.fileName,
-              orderId: o.id,
-              orderCode: o.code,
-            );
-            await widget.dataService.updateOrder(o.id, {
-              'status': 'completed',
-              'isPurged': true,
-              'completedAt': DateTime.now(),
-            });
-          },
-          icon: const Icon(Icons.task_alt_rounded, size: 18),
-          label: const Text('Complete Order'),
-        ),
-    ],
-  );
+        // READY: Complete Order. Bin is HIDDEN.
+        if (o.status == OrderStatus.ready)
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            onPressed: () => _completeOrder(o),
+            icon: const Icon(Icons.task_alt_rounded, size: 16),
+            label: const Text('Complete Order'),
+          ),
+      ],
+    );
+  }
 
   void _previewDocument(PrintOrder o) {
     showDialog(
       context: context,
-      builder: (ctx) => DocumentPreviewDialog(
-        order: o,
-        onDeleteAfterPrint: () => _deleteAfterPrinting(o),
-      ),
+      builder: (ctx) => DocumentPreviewDialog(order: o),
     );
   }
 
-  Future<void> _deleteAfterPrinting(PrintOrder o) async {
-    await StorageService().deleteAfterPrinting(
-      fileUrl: o.fileUrl,
-      fileName: o.fileName,
-      orderId: o.id,
-      orderCode: o.code,
-    );
-    await widget.dataService.updateOrder(o.id, {'isPurged': true});
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.teal[800],
-          content: Row(
-            children: [
-              const Icon(Icons.cleaning_services_rounded, color: Colors.white),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Document "${o.fileName}" deleted from device and cloud after printing.',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+  Future<void> _completeOrder(PrintOrder o) async {
+    if (_completing.contains(o.id)) return;
+    setState(() => _completing.add(o.id));
+    try {
+      await widget.dataService.updateOrder(o.id, {
+        'status': 'completed',
+        'completedAt': DateTime.now(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.teal[800],
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Order #${o.code} marked as Completed. File retained until Bin cleanup.',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _completing.remove(o.id));
+    }
+  }
+
+  Future<void> _handleBinClick(PrintOrder o) async {
+    if (_deleting.contains(o.id)) return;
+
+    // Step 5 Guard: Restrict deletion to eligible completed orders only
+    final isEligible = o.status == OrderStatus.completed;
+
+    if (!isEligible) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Only completed orders can be deleted via Bin.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final reasonController = TextEditingController();
+    String? validationError;
+
+    // Ask for confirmation and require a removal reason before removing
+    final removalReason = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          icon: const Icon(
+            Icons.delete_forever_rounded,
+            color: Colors.redAccent,
+            size: 38,
+          ),
+          title: Text(
+            'Remove Order #${o.code} from Queue?',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Remove document "${o.fileName}" and Order #${o.code} from active queue?',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '• The document file will be deleted from storage.\n'
+                  '• The order will be removed from your active queue.\n'
+                  '• The student will be able to see this reason in their order history.\n'
+                  '• Payment and financial records (₹${o.total.toStringAsFixed(2)}) will be safely retained in reports and history.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.45,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: reasonController,
+                  autofocus: true,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    labelText: 'Reason for removing this order',
+                    hintText:
+                        'e.g. Completed & collected, or duplicate submission',
+                    errorText: validationError,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (text) {
+                    if (validationError != null && text.trim().isNotEmpty) {
+                      setDlgState(() => validationError = null);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: () {
+                final text = reasonController.text.trim();
+                if (text.isEmpty) {
+                  setDlgState(() {
+                    validationError =
+                        'Please enter a reason for removing this order.';
+                  });
+                  return;
+                }
+                Navigator.pop(ctx, text);
+              },
+              child: const Text('Confirm Removal'),
+            ),
+          ],
         ),
+      ),
+    );
+
+    if (removalReason == null) {
+      return; // Cancelled
+    }
+
+    setState(() => _deleting.add(o.id));
+    try {
+      final storage = StorageService();
+
+      // Delete from Supabase Storage and local cache/vault, verifying deletion
+      final deletionSuccess = await storage.deleteAfterPrinting(
+        fileUrl: o.fileUrl,
+        fileName: o.fileName,
+        orderId: o.id,
+        orderCode: o.code,
       );
+
+      // If deletion fails because of a network issue or permissions, show error and allow safe retry
+      if (!deletionSuccess) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.red[800],
+              duration: const Duration(seconds: 6),
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline_rounded, color: Colors.white),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Failed to delete file from Supabase Storage. Check network connection and retry.',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              action: SnackBarAction(
+                label: 'Retry',
+                textColor: Colors.white,
+                onPressed: () => _handleBinClick(o),
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      final now = DateTime.now();
+      // Remove/invalidate file reference in database record, save removal reason, while preserving order and financial records
+      await widget.dataService.updateOrder(o.id, {
+        'isPurged': true,
+        'is_purged': true,
+        'fileUrl': '',
+        'file_url': '',
+        'isDeletedFromQueue': true,
+        'is_deleted_from_queue': true,
+        'removalReason': removalReason,
+        'removal_reason': removalReason,
+        'cancellationReason': removalReason,
+        'cancellation_reason': removalReason,
+        'removedAt': now.toIso8601String(),
+        'removed_at': now.toIso8601String(),
+        'removedBy': 'Shopkeeper',
+        'removed_by': 'Shopkeeper',
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.teal[800],
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Order #${o.code} removed from active queue. Reason saved for student.',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red[800],
+            duration: const Duration(seconds: 6),
+            content: Text('Error removing order: $e'),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _handleBinClick(o),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deleting.remove(o.id));
     }
   }
 
@@ -1349,7 +945,10 @@ class _ShopOrdersState extends State<ShopOrders> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Order: ${o.code}', style: const TextStyle(fontWeight: FontWeight.w800)),
+            Text(
+              'Order: ${o.code}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 4),
             Text('Student: ${o.studentName} (${o.studentEmail})'),
             const SizedBox(height: 4),
@@ -1410,7 +1009,9 @@ class _ShopOrdersState extends State<ShopOrders> {
             child: const Text('Cancel'),
           ),
           FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF00C853)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF00C853),
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.check_circle_rounded, size: 18),
             label: const Text('VERIFY & CONFIRM PAID'),
@@ -1439,102 +1040,134 @@ class _ShopOrdersState extends State<ShopOrders> {
   }
 
   Future<void> _reject(PrintOrder o) async {
-    const reasons = [
-      'File cannot be opened',
-      'Printer unavailable',
-      'Paper unavailable',
-      'Required service unavailable',
-      'Shop temporarily unavailable',
-      'Other',
-    ];
+    final reasonController = TextEditingController();
+    String? validationError;
 
-    String selectedReason = reasons.first;
-    final otherController = TextEditingController();
-
-    final reason = await showDialog<String>(
+    final confirmedReason = await showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text(
-            'Reject Order',
-            style: TextStyle(fontWeight: FontWeight.w800),
+        builder: (context, setDlgState) => AlertDialog(
+          icon: const Icon(
+            Icons.cancel_outlined,
+            color: Colors.redAccent,
+            size: 38,
+          ),
+          title: Text(
+            'Reject Order #${o.code}',
+            style: const TextStyle(fontWeight: FontWeight.w800),
           ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Select reason for rejecting order #${o.code}:'),
-                const SizedBox(height: 12),
-                ...reasons.map(
-                  (r) => RadioListTile<String>(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(r, style: const TextStyle(fontSize: 13.5)),
-                    value: r,
-                    // ignore: deprecated_member_use
-                    groupValue: selectedReason,
-                    // ignore: deprecated_member_use
-                    onChanged: (v) {
-                      if (v != null) setDialogState(() => selectedReason = v);
-                    },
-                  ),
+                Text(
+                  'Please provide a reason for rejecting order #${o.code} (${o.studentName}):',
+                  style: const TextStyle(fontSize: 13.5),
                 ),
-                if (selectedReason == 'Other') ...[
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: otherController,
-                    decoration: const InputDecoration(
-                      hintText: 'Please specify rejection reason...',
-                    ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: reasonController,
+                  autofocus: true,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Reason for Rejection',
+                    hintText:
+                        'e.g. Incomplete pages, unreadable formatting, printer offline...',
+                    errorText: validationError,
+                    border: const OutlineInputBorder(),
                   ),
-                ],
+                  onChanged: (text) {
+                    if (validationError != null && text.trim().isNotEmpty) {
+                      setDlgState(() => validationError = null);
+                    }
+                  },
+                ),
               ],
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Back'),
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Cancel'),
             ),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
               onPressed: () {
-                final finalReason =
-                    selectedReason == 'Other' &&
-                        otherController.text.trim().isNotEmpty
-                    ? otherController.text.trim()
-                    : selectedReason;
-                Navigator.pop(ctx, finalReason);
+                final trimmed = reasonController.text.trim();
+                if (trimmed.isEmpty) {
+                  setDlgState(() {
+                    validationError = 'Reason for Rejection cannot be empty.';
+                  });
+                  return;
+                }
+                Navigator.pop(ctx, trimmed);
               },
-              child: const Text('Reject Order'),
+              child: const Text('Confirm Rejection'),
             ),
           ],
         ),
       ),
     );
 
-    if (reason != null && reason.isNotEmpty) {
-      await StorageService().deleteFile(o.fileUrl);
-      final isOnlinePaid =
-          o.paymentMode == PaymentMode.online &&
-          o.paymentStatus == PaymentStatus.paid;
+    if (confirmedReason == null || confirmedReason.trim().isEmpty) {
+      // Cancelled, leave order unchanged
+      return;
+    }
 
+    final reason = confirmedReason.trim();
+    final isOnlinePaid =
+        o.paymentMode == PaymentMode.online &&
+        o.paymentStatus == PaymentStatus.paid;
+
+    try {
       await widget.dataService.updateOrder(o.id, {
-        'status': 'cancelled',
-        'isPurged': true,
+        'status': 'rejected',
         'cancellationBy': 'SHOPKEEPER',
         'cancellationReason': reason,
+        'cancellation_reason': reason,
+        'rejectionReason': reason,
+        'rejection_reason': reason,
         'refundStatus': isOnlinePaid ? 'REFUND_INITIATED' : 'NONE',
         if (isOnlinePaid) 'paymentStatus': 'refundPending',
       });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              isOnlinePaid
-                  ? 'Order #${o.code} rejected. Refund initiated to student.'
-                  : 'Order #${o.code} rejected.',
+            backgroundColor: Colors.green[800],
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isOnlinePaid
+                        ? 'Order #${o.code} rejected (refund initiated). Reason recorded.'
+                        : 'Order #${o.code} rejected. Reason recorded.',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red[800],
+            duration: const Duration(seconds: 6),
+            content: Text('Failed to reject order: $e'),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _reject(o),
             ),
           ),
         );
@@ -1542,17 +1175,187 @@ class _ShopOrdersState extends State<ShopOrders> {
     }
   }
 
-  Widget _specTag(IconData icon, String text) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(icon, size: 14, color: AppTheme.primary),
-      const SizedBox(width: 5),
-      Text(
-        text,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+  Widget _buildShopPrintSummary(PrintOrder o, ThemeData theme) {
+    final int bwCount = o.calculatedBwPages;
+    final int colorCount = o.calculatedColorPages;
+    final String paperName = o.paperTypeName.isNotEmpty
+        ? o.paperTypeName
+        : o.paperType.name;
+    final String gsmText = o.gsmName.isNotEmpty ? ' (${o.gsmName})' : '';
+    final String bindingText =
+        o.bindingName.isNotEmpty && o.bindingName.toLowerCase() != 'none'
+        ? o.bindingName
+        : (o.bindingType != BindingType.none ? o.bindingType.name : '');
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.35,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+        ),
       ),
-    ],
-  );
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.summarize_rounded,
+                size: 16,
+                color: AppTheme.primary,
+              ),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Print Summary',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: AppTheme.primary,
+                  ),
+                ),
+              ),
+              if (o.pageSettings.isNotEmpty || o.calculatedColorPages > 0)
+                InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => _showPerPageDetailsDialog(context, o),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.tune_rounded,
+                          size: 12,
+                          color: Color(0xFF8B5CF6),
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Per-Page Details',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF8B5CF6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Divider(height: 1),
+          const SizedBox(height: 6),
+          _summaryRow('B&W Pages', '$bwCount (${o.bwPagesDisplayText})', theme),
+          _summaryRow(
+            'Colour Pages',
+            '$colorCount (${o.colorPagesDisplayText})',
+            theme,
+          ),
+          _summaryRow('Removed Pages', '${o.removedPagesCount}', theme),
+          _summaryRow('Copies', '${o.copies}', theme),
+          const SizedBox(height: 6),
+          const Divider(height: 1),
+          const SizedBox(height: 6),
+          _summaryRow(
+            'Print Sides',
+            o.doubleSided ? 'Double Side (Back to Back)' : 'Single Side',
+            theme,
+          ),
+          _summaryRow('Paper Type', '$paperName$gsmText', theme),
+          if (bindingText.isNotEmpty)
+            _summaryRow('Binding', bindingText, theme),
+          if (o.lamination) _summaryRow('Lamination', 'Included', theme),
+          if (o.priceSnapshot?['additionalServices'] is List &&
+              (o.priceSnapshot!['additionalServices'] as List).isNotEmpty)
+            _summaryRow(
+              'Additional Services',
+              (o.priceSnapshot!['additionalServices'] as List)
+                  .map(
+                    (s) =>
+                        s is Map ? s['name']?.toString() ?? '' : s.toString(),
+                  )
+                  .where((name) => name.isNotEmpty)
+                  .join(', '),
+              theme,
+            ),
+
+          const SizedBox(height: 6),
+          const Divider(height: 1),
+          const SizedBox(height: 6),
+          _summaryRow(
+            'Total Amount',
+            '₹${o.total.toStringAsFixed(2)}',
+            theme,
+            isBold: true,
+            isPrimary: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryRow(
+    String label,
+    String value,
+    ThemeData theme, {
+    bool isBold = false,
+    bool isRemoved = false,
+    bool isPrimary = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: isRemoved
+                    ? Colors.redAccent
+                    : theme.colorScheme.onSurfaceVariant,
+                fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 6,
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isBold ? FontWeight.w800 : FontWeight.w700,
+                color: isRemoved
+                    ? Colors.redAccent
+                    : (isPrimary ? AppTheme.primary : null),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _openPaymentSettingsDialog(BuildContext context) async {
     final theme = Theme.of(context);
@@ -1740,7 +1543,7 @@ class _PerPageDetailsDialogState extends State<PerPageDetailsDialog> {
 
     final List<PagePrintSetting> allSettings;
     if (o.pageSettings.isNotEmpty) {
-      allSettings = o.pageSettings;
+      allSettings = o.pageSettings.whereType<PagePrintSetting>().toList();
     } else {
       final colorSet = o.colorPageNumbers.toSet();
       allSettings = List.generate(
@@ -1817,7 +1620,9 @@ class _PerPageDetailsDialogState extends State<PerPageDetailsDialog> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.4,
+                  ),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: theme.dividerColor.withValues(alpha: 0.2),
@@ -1829,9 +1634,29 @@ class _PerPageDetailsDialogState extends State<PerPageDetailsDialog> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Total: $total Pages', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
-                        Text('B&W: $bwCount', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: Colors.blueGrey)),
-                        Text('Color: $colorCount', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: Color(0xFF8B5CF6))),
+                        Text(
+                          'Total: $total Pages',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        Text(
+                          'B&W: $bwCount',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
+                            color: Colors.blueGrey,
+                          ),
+                        ),
+                        Text(
+                          'Color: $colorCount',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
+                            color: Color(0xFF8B5CF6),
+                          ),
+                        ),
                       ],
                     ),
                     if (colorCount > 0) ...[
@@ -1928,13 +1753,21 @@ class _PerPageDetailsDialogState extends State<PerPageDetailsDialog> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: isColor
-                                        ? const Color(0xFF8B5CF6).withValues(alpha: 0.15)
-                                        : Colors.blueGrey.withValues(alpha: 0.15),
+                                        ? const Color(
+                                            0xFF8B5CF6,
+                                          ).withValues(alpha: 0.15)
+                                        : Colors.blueGrey.withValues(
+                                            alpha: 0.15,
+                                          ),
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
                                       color: isColor
-                                          ? const Color(0xFF8B5CF6).withValues(alpha: 0.4)
-                                          : Colors.blueGrey.withValues(alpha: 0.3),
+                                          ? const Color(
+                                              0xFF8B5CF6,
+                                            ).withValues(alpha: 0.4)
+                                          : Colors.blueGrey.withValues(
+                                              alpha: 0.3,
+                                            ),
                                     ),
                                   ),
                                   child: Text(

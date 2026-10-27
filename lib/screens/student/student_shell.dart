@@ -3,7 +3,6 @@ import '../../models/app_models.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../widgets/glass.dart';
-import 'automatic_detection_screen.dart';
 import 'student_home.dart';
 import 'student_orders.dart';
 
@@ -25,8 +24,28 @@ class StudentShell extends StatefulWidget {
   State<StudentShell> createState() => _StudentShellState();
 }
 
-class _StudentShellState extends State<StudentShell> {
+class _StudentShellState extends State<StudentShell>
+    with WidgetsBindingObserver {
   int index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      widget.dataService.refreshOrders();
+    }
+  }
 
   Future<void> _confirmSignOut() async {
     final confirm = await showDialog<bool>(
@@ -64,12 +83,6 @@ class _StudentShellState extends State<StudentShell> {
         profile: widget.profile,
         onToggleTheme: widget.onToggleTheme,
         onSignOut: _confirmSignOut,
-        onNavigateToAutoDetect: () => setState(() => index = 1),
-      ),
-      AutomaticDetectionScreen(
-        dataService: widget.dataService,
-        profile: widget.profile,
-        onToggleTheme: widget.onToggleTheme,
       ),
       StudentOrders(
         dataService: widget.dataService,
@@ -88,15 +101,18 @@ class _StudentShellState extends State<StudentShell> {
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final activeIndex = (index >= 0 && index < pages.length)
+                    ? index
+                    : 0;
                 if (isWide) {
                   return Row(
                     children: [
                       SizedBox(width: 260, child: _rail()),
-                      Expanded(child: pages[index]),
+                      Expanded(child: pages[activeIndex]),
                     ],
                   );
                 }
-                return pages[index];
+                return pages[activeIndex];
               },
             ),
           ),
@@ -105,18 +121,13 @@ class _StudentShellState extends State<StudentShell> {
       bottomNavigationBar: isWide
           ? null
           : NavigationBar(
-              selectedIndex: index,
+              selectedIndex: (index >= 0 && index < pages.length) ? index : 0,
               onDestinationSelected: (v) => setState(() => index = v),
               destinations: const [
                 NavigationDestination(
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home_rounded),
                   label: 'Home',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.auto_awesome_outlined),
-                  selectedIcon: Icon(Icons.auto_awesome_rounded),
-                  label: 'Auto Detect',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.receipt_long_outlined),
@@ -149,9 +160,7 @@ class _StudentShellState extends State<StudentShell> {
           const SizedBox(height: 24),
           _navItem(Icons.home_rounded, 'Home', 0),
           const SizedBox(height: 6),
-          _navItem(Icons.auto_awesome_rounded, 'Auto Detect', 1),
-          const SizedBox(height: 6),
-          _navItem(Icons.receipt_long_rounded, 'My Orders', 2),
+          _navItem(Icons.receipt_long_rounded, 'My Orders', 1),
           const Spacer(),
           IconButton(
             onPressed: widget.onToggleTheme,

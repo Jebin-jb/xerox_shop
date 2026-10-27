@@ -32,6 +32,19 @@ class _ShopReportsState extends State<ShopReports> {
   final descController = TextEditingController();
   bool _addingExpense = false;
 
+  void _resetFilters() {
+    final now = DateTime.now();
+    setState(() {
+      range = DateTimeRange(start: DateTime(now.year, now.month, 1), end: now);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Report filters reset to default (Current Month).'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     categoryController.dispose();
@@ -119,41 +132,84 @@ class _ShopReportsState extends State<ShopReports> {
         ),
         const SizedBox(height: 18),
 
-        // Date Range Selector
+        // Date Range Selector with Reset Option
         GlassPanel(
           padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'SELECTED PERIOD',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.8,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 460;
+              final info = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'SELECTED PERIOD',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${DateFormat('dd MMM yyyy').format(range.start)} — ${DateFormat('dd MMM yyyy').format(range.end)}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14.5,
-                      ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${DateFormat('dd MMM yyyy').format(range.start)} — ${DateFormat('dd MMM yyyy').format(range.end)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14.5,
                     ),
-                  ],
-                ),
-              ),
-              FilledButton.tonalIcon(
-                onPressed: _selectDateRange,
-                icon: const Icon(Icons.date_range_rounded, size: 18),
-                label: const Text('Change'),
-              ),
-            ],
+                  ),
+                ],
+              );
+
+              final actions = Row(
+                mainAxisSize: isNarrow ? MainAxisSize.max : MainAxisSize.min,
+                children: [
+                  if (isNarrow)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _resetFilters,
+                        icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                        label: const Text('Reset'),
+                      ),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      onPressed: _resetFilters,
+                      icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                      label: const Text('Reset'),
+                    ),
+                  const SizedBox(width: 8),
+                  if (isNarrow)
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _selectDateRange,
+                        icon: const Icon(Icons.date_range_rounded, size: 18),
+                        label: const Text('Change'),
+                      ),
+                    )
+                  else
+                    FilledButton.tonalIcon(
+                      onPressed: _selectDateRange,
+                      icon: const Icon(Icons.date_range_rounded, size: 18),
+                      label: const Text('Change'),
+                    ),
+                ],
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [info, const SizedBox(height: 12), actions],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: info),
+                  actions,
+                ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 20),
@@ -203,26 +259,40 @@ class _ShopReportsState extends State<ShopReports> {
                 return Column(
                   children: [
                     // Financial summary cards
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _metricCard(
-                            'Gross Revenue',
-                            '₹${totalRevenue.toStringAsFixed(0)}',
-                            Colors.green,
-                            Icons.arrow_upward_rounded,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _metricCard(
-                            'Total Expenses',
-                            '₹${totalExpense.toStringAsFixed(0)}',
-                            Colors.red,
-                            Icons.arrow_downward_rounded,
-                          ),
-                        ),
-                      ],
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isNarrow = constraints.maxWidth < 420;
+                        final gross = _metricCard(
+                          'Gross Revenue',
+                          '₹${totalRevenue.toStringAsFixed(0)}',
+                          Colors.green,
+                          Icons.arrow_upward_rounded,
+                        );
+                        final expense = _metricCard(
+                          'Total Expenses',
+                          '₹${totalExpense.toStringAsFixed(0)}',
+                          Colors.red,
+                          Icons.arrow_downward_rounded,
+                        );
+
+                        if (isNarrow) {
+                          return Column(
+                            children: [
+                              gross,
+                              const SizedBox(height: 12),
+                              expense,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(child: gross),
+                            const SizedBox(width: 12),
+                            Expanded(child: expense),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
                     _metricCard(
@@ -236,9 +306,7 @@ class _ShopReportsState extends State<ShopReports> {
                     const SizedBox(height: 28),
 
                     // Add Expense Box
-                    const PageIntro(
-                      title: 'Log Shop Expense',
-                    ),
+                    const PageIntro(title: 'Log Shop Expense'),
                     const SizedBox(height: 12),
 
                     GlassPanel(
@@ -255,67 +323,82 @@ class _ShopReportsState extends State<ShopReports> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 3,
-                                child: DropdownButtonFormField<String>(
-                                  initialValue: categoryController.text,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Category',
-                                    prefixIcon: Icon(Icons.category_rounded),
-                                  ),
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: 'Paper Bundle',
-                                      child: Text('Paper'),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final isNarrow = constraints.maxWidth < 380;
+                              final categoryDropdown =
+                                  DropdownButtonFormField<String>(
+                                    initialValue: categoryController.text,
+                                    isExpanded: true,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Category',
+                                      prefixIcon: Icon(Icons.category_rounded),
                                     ),
-                                    DropdownMenuItem(
-                                      value: 'Toner / Ink',
-                                      child: Text('Toner/Ink'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Binding / Spiral',
-                                      child: Text('Binding'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Maintenance',
-                                      child: Text('Repair'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Electricity',
-                                      child: Text('Bills'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Other',
-                                      child: Text('Other'),
-                                    ),
-                                  ],
-                                  onChanged: (v) {
-                                    if (v != null) {
-                                      setState(
-                                        () => categoryController.text = v,
-                                      );
-                                    }
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                flex: 2,
-                                child: TextField(
-                                  controller: amountController,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'Paper Bundle',
+                                        child: Text('Paper'),
                                       ),
-                                  decoration: const InputDecoration(
-                                    labelText: 'Amount',
-                                    prefixText: '₹ ',
-                                  ),
+                                      DropdownMenuItem(
+                                        value: 'Toner / Ink',
+                                        child: Text('Toner/Ink'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Binding / Spiral',
+                                        child: Text('Binding'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Maintenance',
+                                        child: Text('Repair'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Electricity',
+                                        child: Text('Bills'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Other',
+                                        child: Text('Other'),
+                                      ),
+                                    ],
+                                    onChanged: (v) {
+                                      if (v != null) {
+                                        setState(
+                                          () => categoryController.text = v,
+                                        );
+                                      }
+                                    },
+                                  );
+
+                              final amountField = TextField(
+                                controller: amountController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Amount',
+                                  prefixText: '₹ ',
                                 ),
-                              ),
-                            ],
+                              );
+
+                              if (isNarrow) {
+                                return Column(
+                                  children: [
+                                    categoryDropdown,
+                                    const SizedBox(height: 12),
+                                    amountField,
+                                  ],
+                                );
+                              }
+
+                              return Row(
+                                children: [
+                                  Expanded(flex: 3, child: categoryDropdown),
+                                  const SizedBox(width: 12),
+                                  Expanded(flex: 2, child: amountField),
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 16),
                           SizedBox(
@@ -348,80 +431,6 @@ class _ShopReportsState extends State<ShopReports> {
                         ],
                       ),
                     ),
-
-                    const SizedBox(height: 28),
-
-                    // Recent Expenses List
-                    if (expenses.isNotEmpty) ...[
-                      const PageIntro(
-                        title: 'Recent Expenses',
-                      ),
-                      const SizedBox(height: 12),
-                      ...expenses.reversed
-                          .take(6)
-                          .map(
-                            (e) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: GlassPanel(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: const Icon(
-                                        Icons.receipt_outlined,
-                                        color: Colors.red,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            e.title,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 13.5,
-                                            ),
-                                          ),
-                                          Text(
-                                            '${e.category} • ${DateFormat('dd MMM, hh:mm a').format(e.createdAt)}',
-                                            style: TextStyle(
-                                              fontSize: 11.5,
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Text(
-                                      '-₹${e.amount.toStringAsFixed(0)}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.red,
-                                        fontSize: 14.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                    ],
                   ],
                 );
               },
@@ -446,14 +455,19 @@ class _ShopReportsState extends State<ShopReports> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: isHero ? 13 : 11.5,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.2,
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: isHero ? 13 : 11.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
+            const SizedBox(width: 4),
             Icon(icon, size: isHero ? 22 : 18, color: color),
           ],
         ),

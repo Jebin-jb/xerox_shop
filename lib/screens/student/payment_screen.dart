@@ -153,7 +153,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+            const Icon(
+              Icons.check_circle_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
             const SizedBox(width: 8),
             Text('UPI ID "${_shopAccount.upiId}" copied to clipboard!'),
           ],
@@ -174,9 +178,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom,
-        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
@@ -208,7 +210,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         color: const Color(0xFF00C853).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.verified_rounded, color: Color(0xFF00C853), size: 24),
+                      child: const Icon(
+                        Icons.verified_rounded,
+                        color: Color(0xFF00C853),
+                        size: 24,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     const Expanded(
@@ -217,7 +223,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         children: [
                           Text(
                             'Submit Payment Proof',
-                            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 17,
+                            ),
                           ),
                           Text(
                             'Enter your UPI reference for shopkeeper verification',
@@ -267,8 +276,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     labelText: 'UPI Transaction ID / UTR / Reference No. *',
                     hintText: 'e.g. 428198271822 or UPI ref number',
                     prefixIcon: const Icon(Icons.receipt_long_rounded),
-                    helperText: 'Found in your Google Pay, PhonePe, or Paytm receipt',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    helperText:
+                        'Found in your Google Pay, PhonePe, or Paytm receipt',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   validator: (val) {
                     if (val == null || val.trim().isEmpty) {
@@ -287,7 +299,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     backgroundColor: const Color(0xFF00C853),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   icon: const Icon(Icons.check_circle_rounded),
                   label: const Text(
@@ -358,7 +372,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.info_outline_rounded, color: Colors.orange, size: 36),
+        icon: const Icon(
+          Icons.info_outline_rounded,
+          color: Colors.orange,
+          size: 36,
+        ),
         title: const Text(
           'Online Payment Unavailable',
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
@@ -395,7 +413,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ONLINE PAY', style: TextStyle(fontWeight: FontWeight.w900)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        title: const Text(
+          'ONLINE PAY',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
         centerTitle: true,
         actions: [
           IconButton(
@@ -444,20 +468,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         style: FilledButton.styleFrom(
                           backgroundColor: theme.colorScheme.primary,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                         ),
                         icon: _isProcessing
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               )
                             : const Icon(Icons.open_in_new_rounded),
                         label: Text(
                           _isProcessing ? _statusMessage : 'OPEN UPI APP',
-                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                          ),
                         ),
-                        onPressed: _isProcessing ? null : () => _handleOpenUpiApp(),
+                        onPressed: _isProcessing
+                            ? null
+                            : () => _handleOpenUpiApp(),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -468,7 +502,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       child: OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
                           foregroundColor: theme.colorScheme.onSurface,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                         ),
                         icon: const Icon(Icons.storefront_rounded, size: 18),
                         label: const Text(
@@ -495,7 +531,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.25)),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.25),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -545,7 +583,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   Widget _buildDynamicQrCard(ThemeData theme) {
     final qrUrl = _shopAccount.qrImageUrl;
-    final payeeName = _shopAccount.payeeName.isNotEmpty ? _shopAccount.payeeName : 'Campus Xerox';
+    final payeeName = _shopAccount.payeeName.isNotEmpty
+        ? _shopAccount.payeeName
+        : 'Campus Xerox';
     final upiId = _shopAccount.upiId;
 
     return Container(
@@ -605,7 +645,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         return const SizedBox(
                           width: 220,
                           height: 220,
-                          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                          child: Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
                         );
                       },
                       errorBuilder: (context, error, stackTrace) => Container(
@@ -615,9 +657,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         child: const Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                            Icon(
+                              Icons.broken_image_rounded,
+                              size: 48,
+                              color: Colors.grey,
+                            ),
                             SizedBox(height: 8),
-                            Text('QR Image Loading Error', style: TextStyle(color: Colors.grey)),
+                            Text(
+                              'QR Image Loading Error',
+                              style: TextStyle(color: Colors.grey),
+                            ),
                           ],
                         ),
                       ),
@@ -630,11 +679,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.qr_code_2_rounded, size: 64, color: Colors.purple.shade300),
+                          Icon(
+                            Icons.qr_code_2_rounded,
+                            size: 64,
+                            color: Colors.purple.shade300,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             upiId.isNotEmpty ? upiId : 'No QR uploaded by shop',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade700,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -671,7 +728,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 borderRadius: BorderRadius.circular(6),
                 child: Padding(
                   padding: const EdgeInsets.all(4),
-                  child: Icon(Icons.copy_rounded, size: 16, color: theme.colorScheme.primary),
+                  child: Icon(
+                    Icons.copy_rounded,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
               ),
             ],
@@ -692,10 +753,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
             style: OutlinedButton.styleFrom(
               foregroundColor: Colors.black87,
               side: BorderSide(color: Colors.grey.shade400),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             icon: const Icon(Icons.copy_rounded, size: 16),
-            label: const Text('COPY UPI ID', style: TextStyle(fontWeight: FontWeight.w800)),
+            label: const Text(
+              'COPY UPI ID',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
             onPressed: _copyUpiId,
           ),
         ],
@@ -713,7 +779,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ),
       child: Row(
         children: [
-          Icon(Icons.hourglass_top_rounded, color: Colors.amber.shade900, size: 28),
+          Icon(
+            Icons.hourglass_top_rounded,
+            color: Colors.amber.shade900,
+            size: 28,
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -751,7 +821,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFF00C853),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
             icon: const Icon(Icons.check_circle_rounded),
             label: const Text(
@@ -769,7 +841,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           child: OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               foregroundColor: theme.colorScheme.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
             icon: const Icon(Icons.refresh_rounded),
             label: const Text(
@@ -813,9 +887,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         SizedBox(
           height: 48,
           child: TextButton.icon(
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.deepOrange,
-            ),
+            style: TextButton.styleFrom(foregroundColor: Colors.deepOrange),
             icon: const Icon(Icons.storefront_rounded, size: 18),
             label: const Text(
               'SWITCH TO PAY AT COUNTER',

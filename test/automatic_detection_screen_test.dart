@@ -38,15 +38,17 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
 
       // Verify Title & absence of marketing/subtitles
-      expect(find.text('Auto Detect'), findsOneWidget);
-      expect(find.text('Smart Document Analysis'), findsOneWidget);
-      expect(find.text('Instant AI-powered detection of total pages, color distribution, paper size, and print rates.'), findsNothing);
+      expect(find.text('Documents'), findsOneWidget);
+      expect(find.text('Smart Document Analysis'), findsNothing);
+      expect(
+        find.text(
+          'Instant AI-powered detection of total pages, color distribution, paper size, and print rates.',
+        ),
+        findsNothing,
+      );
 
       // Verify Upload / Pick Document Area
-      expect(
-        find.text('Tap to Select Document for Auto Detect'),
-        findsOneWidget,
-      );
+      expect(find.text('Tap to Select Document'), findsOneWidget);
       expect(find.text('Browse'), findsOneWidget);
 
       // Verify Sample documents quick chips are removed

@@ -1,12 +1,15 @@
 import 'dart:math';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 import '../models/app_models.dart';
 
 class PageAnalysis {
   final int pageNumber;
   PrintType printType;
   bool isBlank;
-  final String orientation; // 'Portrait' or 'Landscape'
+  bool isRemoved;
+  PrintType? previousPrintType;
+  String orientation; // 'Portrait' or 'Landscape'
   final double estimatedCoverage; // 0.0 to 1.0 (ink coverage)
   final String dimensions; // e.g. "A4 (210 x 297 mm)"
 
@@ -20,28 +23,35 @@ class PageAnalysis {
     PrintType? printType,
     bool? isColor,
     this.isBlank = false,
+    this.isRemoved = false,
+    this.previousPrintType,
     this.orientation = 'Portrait',
     this.estimatedCoverage = 0.12,
     this.dimensions = 'A4 (210 × 297 mm)',
-  }) : printType = printType ??
-            ((isColor ?? false) ? PrintType.color : PrintType.bw);
+  }) : printType =
+           printType ?? ((isColor ?? false) ? PrintType.color : PrintType.bw);
 
   PageAnalysis copyWith({
     int? pageNumber,
     PrintType? printType,
     bool? isColor,
     bool? isBlank,
+    bool? isRemoved,
+    PrintType? previousPrintType,
     String? orientation,
     double? estimatedCoverage,
     String? dimensions,
   }) {
     return PageAnalysis(
       pageNumber: pageNumber ?? this.pageNumber,
-      printType: printType ??
+      printType:
+          printType ??
           (isColor != null
               ? (isColor ? PrintType.color : PrintType.bw)
               : this.printType),
       isBlank: isBlank ?? this.isBlank,
+      isRemoved: isRemoved ?? this.isRemoved,
+      previousPrintType: previousPrintType ?? this.previousPrintType,
       orientation: orientation ?? this.orientation,
       estimatedCoverage: estimatedCoverage ?? this.estimatedCoverage,
       dimensions: dimensions ?? this.dimensions,
@@ -49,10 +59,12 @@ class PageAnalysis {
   }
 
   PagePrintSetting toPrintSetting({double? unitPrice}) => PagePrintSetting(
-        pageNumber: pageNumber,
-        printType: printType,
-        unitPrice: unitPrice ?? 0.0,
-      );
+    pageNumber: pageNumber,
+    printType: printType,
+    unitPrice: unitPrice ?? 0.0,
+    orientation: orientation,
+    isRemoved: isRemoved,
+  );
 }
 
 class DocumentAnalysisResult {
@@ -74,16 +86,21 @@ class DocumentAnalysisResult {
 
   int get totalPages => pages.length;
 
-  int get colorPagesCount => pages.where((p) => p.isColor && !p.isBlank).length;
+  int get colorPagesCount =>
+      pages.where((p) => !p.isRemoved && p.isColor && !p.isBlank).length;
 
-  int get bwPagesCount => pages.where((p) => !p.isColor && !p.isBlank).length;
+  int get bwPagesCount =>
+      pages.where((p) => !p.isRemoved && !p.isColor && !p.isBlank).length;
+
+  int get removedPagesCount => pages.where((p) => p.isRemoved).length;
 
   int get blankPagesCount => pages.where((p) => p.isBlank).length;
 
-  int get activePrintablePages => totalPages - blankPagesCount;
+  int get activePrintablePages =>
+      pages.where((p) => !p.isRemoved && !p.isBlank).length;
 
   List<int> get colorPageNumbers => pages
-      .where((p) => p.isColor && !p.isBlank)
+      .where((p) => !p.isRemoved && p.isColor && !p.isBlank)
       .map((p) => p.pageNumber)
       .toList();
 
@@ -91,22 +108,26 @@ class DocumentAnalysisResult {
     ShopPrice? prices,
     bool doubleSided = false,
   }) {
-    return pages.map((p) {
+    return pages.where((p) => !p.isRemoved).map((p) {
       final double? unitPrice = prices != null
           ? (p.isColor
-              ? (doubleSided ? prices.colorDouble : prices.colorSingle)
-              : (doubleSided ? prices.bwDouble : prices.bwSingle))
+                ? (doubleSided ? prices.colorDouble : prices.colorSingle)
+                : (doubleSided ? prices.bwDouble : prices.bwSingle))
           : null;
       return PagePrintSetting(
         pageNumber: p.pageNumber,
         printType: p.printType,
         unitPrice: unitPrice ?? 0.0,
+        orientation: p.orientation,
+        isRemoved: p.isRemoved,
       );
     }).toList();
   }
 
   int sheetsNeeded({required bool doubleSided, bool skipBlankPages = false}) {
-    final effectivePages = skipBlankPages ? activePrintablePages : totalPages;
+    final effectivePages = pages
+        .where((p) => !p.isRemoved && (!skipBlankPages || !p.isBlank))
+        .length;
     if (effectivePages <= 0) return 0;
     if (doubleSided) {
       return (effectivePages / 2).ceil();
@@ -127,7 +148,7 @@ class DocumentAnalysisResult {
     bool skipBlankPages = false,
   }) {
     final effectivePages = pages
-        .where((p) => !skipBlankPages || !p.isBlank)
+        .where((p) => !p.isRemoved && (!skipBlankPages || !p.isBlank))
         .toList();
     if (effectivePages.isEmpty) return 0.0;
 
@@ -228,6 +249,55 @@ class DocumentAnalysisService {
   DocumentAnalysisResult _analyzePdfBytes(String fileName, Uint8List bytes) {
     int detectedPages = 0;
     final List<PageAnalysis> pageList = [];
+
+    // 1. Try high-fidelity geometry and orientation extraction with syncfusion_flutter_pdf
+    try {
+      final doc = sf.PdfDocument(inputBytes: bytes);
+      final count = doc.pages.count;
+      if (count > 0) {
+        for (int i = 0; i < count; i++) {
+          final page = doc.pages[i];
+          double w = page.size.width;
+          double h = page.size.height;
+          final rot = page.rotation;
+          if (rot == sf.PdfPageRotateAngle.rotateAngle90 ||
+              rot == sf.PdfPageRotateAngle.rotateAngle270) {
+            final t = w;
+            w = h;
+            h = t;
+          }
+          final isLandscape = w > h;
+          final orientation = isLandscape ? 'Landscape' : 'Portrait';
+          final dimStr = isLandscape
+              ? 'Landscape (${w.toInt()} × ${h.toInt()} pt)'
+              : 'Portrait (${w.toInt()} × ${h.toInt()} pt)';
+
+          pageList.add(
+            PageAnalysis(
+              pageNumber: i + 1,
+              printType: PrintType.bw,
+              isBlank: false,
+              orientation: orientation,
+              estimatedCoverage: 0.11,
+              dimensions: dimStr,
+            ),
+          );
+        }
+        doc.dispose();
+
+        return DocumentAnalysisResult(
+          fileName: fileName,
+          fileSizeBytes: bytes.length,
+          fileExtension: 'pdf',
+          pages: pageList,
+          analyzedAt: DateTime.now(),
+          isAccuratePdf: true,
+        );
+      }
+      doc.dispose();
+    } catch (e) {
+      debugPrint('Syncfusion PDF analysis fallback: $e');
+    }
 
     try {
       final length = bytes.length;
@@ -419,4 +489,3 @@ class DocumentAnalysisService {
   // Pre-loaded sample documents removed to keep only real document workflow
   List<DocumentAnalysisResult> getSampleDocuments() => const [];
 }
-

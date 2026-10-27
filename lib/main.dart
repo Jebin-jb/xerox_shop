@@ -30,8 +30,7 @@ Future<void> main() async {
     try {
       await Supabase.initialize(
         url: SupabaseConfig.supabaseUrl,
-        // ignore: deprecated_member_use
-        anonKey: SupabaseConfig.supabaseAnonKey,
+        publishableKey: SupabaseConfig.supabasePublishableKey,
       );
       debugPrint('Supabase initialized successfully!');
     } catch (e) {

@@ -6,11 +6,19 @@ import 'package:flutter/material.dart';
 import '../../models/app_models.dart';
 import '../../services/data_service.dart';
 import '../../services/document_analysis_service.dart';
+import '../../services/pdf_page_filter_service.dart';
 import '../../services/pdf_thumbnail_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass.dart';
 import 'create_order.dart';
+
+class DocumentPickResult {
+  final PlatformFile file;
+  final Uint8List bytes;
+
+  const DocumentPickResult({required this.file, required this.bytes});
+}
 
 class AutomaticDetectionScreen extends StatefulWidget {
   final DataService dataService;
@@ -32,6 +40,87 @@ class AutomaticDetectionScreen extends StatefulWidget {
     this.isShopkeeperMode = false,
   });
 
+  static Future<FilePickerResult?> Function()? filePickerOverride;
+
+  static Future<DocumentPickResult?> pickDocument(BuildContext context) async {
+    try {
+      final FilePickerResult? result;
+      if (filePickerOverride != null) {
+        result = await filePickerOverride!();
+      } else {
+        result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: [
+            'pdf',
+            'doc',
+            'docx',
+            'ppt',
+            'pptx',
+            'jpg',
+            'jpeg',
+            'png',
+          ],
+          withData: true,
+        );
+      }
+
+      if (result == null || result.files.isEmpty) {
+        return null;
+      }
+
+      final picked = result.files.first;
+      final len = picked.size;
+
+      if (len > StorageService.maxFileSizeBytes) {
+        final sizeMb = (len / (1024 * 1024)).toStringAsFixed(1);
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              icon: const Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.red,
+                size: 36,
+              ),
+              title: const Text('File Exceeds 50MB Limit'),
+              content: Text(
+                'The selected file is $sizeMb MB. Campus Xerox allows files up to a maximum of 50 MB.\n\nPlease select a smaller file.',
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Understood'),
+                ),
+              ],
+            ),
+          );
+        }
+        return null;
+      }
+
+      Uint8List b = picked.bytes ?? Uint8List(0);
+      if (b.isEmpty && picked.path != null && !kIsWeb) {
+        try {
+          final f = File(picked.path!);
+          if (await f.exists()) {
+            b = await f.readAsBytes();
+          }
+        } catch (e) {
+          debugPrint('Error reading file bytes: $e');
+        }
+      }
+
+      return DocumentPickResult(file: picked, bytes: b);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error picking file: $e')));
+      }
+      return null;
+    }
+  }
+
   @override
   State<AutomaticDetectionScreen> createState() =>
       _AutomaticDetectionScreenState();
@@ -40,6 +129,8 @@ class AutomaticDetectionScreen extends StatefulWidget {
 class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
     with SingleTickerProviderStateMixin {
   final DocumentAnalysisService _analysisService = DocumentAnalysisService();
+  final TextEditingController _specialInstructionsCtrl =
+      TextEditingController();
 
   PlatformFile? _file;
   Uint8List? _bytes;
@@ -68,10 +159,17 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
       _livePricing.bindingAndFinishingOptions.where((b) => b.enabled).toList();
 
   PrintConfigItem? get _selectedPaperType {
-    if (_selectedPaperTypeId == null) return null;
-    return _enabledPaperTypes
-        .where((p) => p.id == _selectedPaperTypeId)
+    if (_selectedPaperTypeId != null) {
+      final match = _enabledPaperTypes
+          .where((p) => p.id == _selectedPaperTypeId)
+          .firstOrNull;
+      if (match != null) return match;
+    }
+    // Default to A4 for every print order
+    final a4 = _enabledPaperTypes
+        .where((p) => p.name.toUpperCase() == 'A4' || p.id == 'cfg_paper_a4')
         .firstOrNull;
+    return a4 ?? _enabledPaperTypes.firstOrNull;
   }
 
   PrintConfigItem? get _selectedGsm {
@@ -81,7 +179,9 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
 
   PrintConfigItem? get _selectedBinding {
     if (_selectedBindingId == null) return null;
-    return _enabledBindings.where((b) => b.id == _selectedBindingId).firstOrNull;
+    return _enabledBindings
+        .where((b) => b.id == _selectedBindingId)
+        .firstOrNull;
   }
 
   late AnimationController _scanAnimController;
@@ -90,8 +190,33 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
   @override
   void initState() {
     super.initState();
+    // Set A4 as the default paper size
+    final defaultA4 =
+        _enabledPaperTypes
+            .where(
+              (p) => p.name.toUpperCase() == 'A4' || p.id == 'cfg_paper_a4',
+            )
+            .firstOrNull ??
+        _enabledPaperTypes.firstOrNull;
+    if (defaultA4 != null) {
+      _selectedPaperTypeId = defaultA4.id;
+    }
+
     _pricingSub = widget.dataService.livePricing().listen((_) {
-      if (mounted) setState(() {});
+      if (mounted) {
+        if (_selectedPaperTypeId == null) {
+          final a4 =
+              _enabledPaperTypes
+                  .where(
+                    (p) =>
+                        p.name.toUpperCase() == 'A4' || p.id == 'cfg_paper_a4',
+                  )
+                  .firstOrNull ??
+              _enabledPaperTypes.firstOrNull;
+          if (a4 != null) _selectedPaperTypeId = a4.id;
+        }
+        setState(() {});
+      }
     });
 
     _scanAnimController = AnimationController(
@@ -101,7 +226,8 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
 
     if (widget.initialAnalysis != null) {
       _analysis = widget.initialAnalysis;
-      _file = widget.initialFile ??
+      _file =
+          widget.initialFile ??
           PlatformFile(
             name: widget.initialAnalysis!.fileName,
             size: widget.initialAnalysis!.fileSizeBytes,
@@ -117,10 +243,12 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
   @override
   void didUpdateWidget(covariant AutomaticDetectionScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initialAnalysis != null && widget.initialAnalysis != oldWidget.initialAnalysis) {
+    if (widget.initialAnalysis != null &&
+        widget.initialAnalysis != oldWidget.initialAnalysis) {
       setState(() {
         _analysis = widget.initialAnalysis;
-        _file = widget.initialFile ??
+        _file =
+            widget.initialFile ??
             PlatformFile(
               name: widget.initialAnalysis!.fileName,
               size: widget.initialAnalysis!.fileSizeBytes,
@@ -134,6 +262,7 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
   void dispose() {
     _pricingSub?.cancel();
     _scanAnimController.dispose();
+    _specialInstructionsCtrl.dispose();
     if (_file != null && _bytes != null) {
       PdfThumbnailService().clearDocumentCache(
         '${_file!.name}_${_bytes!.length}',
@@ -143,78 +272,13 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
   }
 
   Future<void> _pickFile() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: [
-          'pdf',
-          'doc',
-          'docx',
-          'ppt',
-          'pptx',
-          'jpg',
-          'jpeg',
-          'png',
-        ],
-        withData: true,
-      );
-
-      if (result != null && result.files.isNotEmpty) {
-        final picked = result.files.first;
-        final len = picked.size;
-
-        if (len > StorageService.maxFileSizeBytes) {
-          final sizeMb = (len / (1024 * 1024)).toStringAsFixed(1);
-          if (mounted) {
-            showDialog(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                icon: const Icon(
-                  Icons.warning_amber_rounded,
-                  color: Colors.red,
-                  size: 36,
-                ),
-                title: const Text('File Exceeds 50MB Limit'),
-                content: Text(
-                  'The selected file is $sizeMb MB. Campus Xerox allows files up to a maximum of 50 MB.\n\nPlease select a smaller file.',
-                ),
-                actions: [
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Understood'),
-                  ),
-                ],
-              ),
-            );
-          }
-          return;
-        }
-
-        Uint8List b = picked.bytes ?? Uint8List(0);
-        if (b.isEmpty && picked.path != null && !kIsWeb) {
-          try {
-            final f = File(picked.path!);
-            if (await f.exists()) {
-              b = await f.readAsBytes();
-            }
-          } catch (e) {
-            debugPrint('Error reading file bytes: $e');
-          }
-        }
-
-        setState(() {
-          _file = picked;
-          _bytes = b;
-        });
-
-        await _runAnalysis(picked.name, b);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error picking file: $e')));
-      }
+    final pickedResult = await AutomaticDetectionScreen.pickDocument(context);
+    if (pickedResult != null && mounted) {
+      setState(() {
+        _file = pickedResult.file;
+        _bytes = pickedResult.bytes;
+      });
+      await _runAnalysis(pickedResult.file.name, pickedResult.bytes);
     }
   }
 
@@ -233,9 +297,7 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
 
     await Future.delayed(const Duration(milliseconds: 300));
     if (mounted) {
-      setState(
-        () => _scanningStatus = 'Analyzing document pages & colors…',
-      );
+      setState(() => _scanningStatus = 'Analyzing document pages & colors…');
     }
 
     final result = await _analysisService.analyzeDocument(
@@ -252,12 +314,36 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
     }
   }
 
-
   void _togglePageColor(int index) {
+    if (_analysis == null) return;
+    final p = _analysis!.pages[index];
+    if (p.isRemoved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This page is excluded. Long-press to restore it.'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      p.isColor = !p.isColor;
+    });
+  }
+
+  void _togglePageRemoval(int index) {
     if (_analysis == null) return;
     setState(() {
       final p = _analysis!.pages[index];
-      p.isColor = !p.isColor;
+      if (!p.isRemoved) {
+        p.previousPrintType = p.printType;
+        p.isRemoved = true;
+      } else {
+        p.isRemoved = false;
+        if (p.previousPrintType != null) {
+          p.printType = p.previousPrintType!;
+        }
+      }
     });
   }
 
@@ -265,33 +351,45 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
     if (_analysis == null) return;
     setState(() {
       for (final p in _analysis!.pages) {
-        p.printType = type;
+        if (!p.isRemoved) {
+          p.printType = type;
+        }
       }
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           type == PrintType.color
-              ? 'Applied Color to all ${_analysis!.pages.length} pages'
-              : 'Applied B&W to all ${_analysis!.pages.length} pages',
+              ? 'Applied Colour to all included pages'
+              : 'Applied B&W to all included pages',
         ),
         duration: const Duration(seconds: 2),
       ),
     );
   }
 
-  void _togglePageBlank(int index) {
+  void _applyToAllOrientation(String orient) {
     if (_analysis == null) return;
     setState(() {
-      final p = _analysis!.pages[index];
-      p.isBlank = !p.isBlank;
+      for (final p in _analysis!.pages) {
+        if (!p.isRemoved) {
+          p.orientation = orient;
+        }
+      }
     });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Applied $orient orientation to all included pages'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
-  void _proceedToOrder(ShopPrice prices) {
+  Future<void> _proceedToOrder(ShopPrice prices) async {
     if (_file == null || _analysis == null) return;
 
-    if (_selectedPaperTypeId == null) {
+    _selectedPaperTypeId ??= _selectedPaperType?.id;
+    if (_selectedPaperTypeId == null && _enabledPaperTypes.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select a Paper Type.'),
@@ -300,7 +398,6 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
       );
       return;
     }
-
 
     if (_copies < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -312,22 +409,69 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
       return;
     }
 
-    final effectiveList = _skipBlankPages
-        ? _analysis!.pages.where((p) => !p.isBlank).toList()
-        : _analysis!.pages;
-    final bwPages = effectiveList.where((p) => !p.isColor).length;
-    final colorPages = effectiveList.where((p) => p.isColor).length;
-    final colorPageNumbers = effectiveList
-        .where((p) => p.isColor)
+    final includedPages = _analysis!.pages
+        .where((p) => !p.isRemoved && (!_skipBlankPages || !p.isBlank))
+        .toList();
+
+    if (includedPages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'All pages are removed. Please include at least one page to print.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final printablePageNumbers = includedPages
         .map((p) => p.pageNumber)
         .toList();
-    final pageSettings = _analysis!.pages.map((p) => PagePrintSetting(
-          pageNumber: p.pageNumber,
+    final bwPages = includedPages.where((p) => !p.isColor).length;
+    final colorPages = includedPages.where((p) => p.isColor).length;
+
+    // Generate filtered printable PDF containing ONLY included pages
+    Uint8List printableBytes = _bytes ?? Uint8List(0);
+    final isPdf = _file!.name.toLowerCase().endsWith('.pdf');
+    if (isPdf &&
+        _bytes != null &&
+        _bytes!.isNotEmpty &&
+        printablePageNumbers.length < _analysis!.totalPages) {
+      printableBytes = await PdfPageFilterService().generateSelectedPagesPdf(
+        sourceBytes: _bytes!,
+        selectedPages: printablePageNumbers,
+      );
+    }
+
+    final pageSelectionStr =
+        printablePageNumbers.length == _analysis!.totalPages
+        ? 'All ${_analysis!.totalPages} pages'
+        : PdfPageFilterService().formatPageRanges(printablePageNumbers);
+
+    final finalCost = _calculateTotalCost(prices);
+
+    final printableColorPageNumbers = <int>[];
+    final pageSettings = <PagePrintSetting>[];
+    for (int i = 0; i < includedPages.length; i++) {
+      final p = includedPages[i];
+      final printablePageNum = i + 1;
+      if (p.isColor) {
+        printableColorPageNumbers.add(printablePageNum);
+      }
+      pageSettings.add(
+        PagePrintSetting(
+          pageNumber: printablePageNum,
           printType: p.printType,
           unitPrice: p.isColor
               ? (_doubleSided ? prices.colorDouble : prices.colorSingle)
               : (_doubleSided ? prices.bwDouble : prices.bwSingle),
-        )).toList();
+          orientation: p.orientation,
+        ),
+      );
+    }
+
+    if (!mounted) return;
 
     Navigator.push(
       context,
@@ -338,19 +482,26 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
           prices: prices,
           onToggleTheme: widget.onToggleTheme,
           prefilledFile: _file,
-          prefilledBytes: _bytes,
-          prefilledPages: effectiveList.length,
+          prefilledBytes: printableBytes,
+          originalBytes: _bytes,
+          prefilledPages: includedPages.length,
+          prefilledTotalDocumentPages: _analysis!.totalPages,
+          prefilledSelectedPages: printablePageNumbers,
+          prefilledPageSelection: pageSelectionStr,
+          prefilledBwPages: bwPages,
+          prefilledColorPages: colorPages,
+          prefilledRemovedPages: _analysis!.totalPages - includedPages.length,
+          prefilledColorPageNumbers: printableColorPageNumbers,
           prefilledColor: colorPages > 0,
           prefilledDoubleSided: _doubleSided,
           prefilledCopies: _copies,
           prefilledLamination: _lamination,
-          prefilledBwPages: bwPages,
-          prefilledColorPages: colorPages,
-          prefilledColorPageNumbers: colorPageNumbers,
           prefilledPageSettings: pageSettings,
           prefilledPaperTypeId: _selectedPaperTypeId,
           prefilledGsmId: _selectedGsmId,
           prefilledBindingId: _selectedBindingId,
+          prefilledSpecialInstructions: _specialInstructionsCtrl.text.trim(),
+          prefilledTotalAmount: finalCost,
         ),
       ),
     );
@@ -378,6 +529,9 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
 
         return Scaffold(
           appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            surfaceTintColor: Colors.transparent,
             automaticallyImplyLeading: false,
             leading: Navigator.canPop(context)
                 ? IconButton(
@@ -385,18 +539,27 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
                     onPressed: () => Navigator.pop(context),
                   )
                 : null,
-            title: const Row(
+            title: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.auto_awesome_rounded,
+                  widget.isShopkeeperMode
+                      ? Icons.print_rounded
+                      : Icons.description_rounded,
                   color: AppTheme.primary,
-                  size: 22,
+                  size: 20,
                 ),
-                SizedBox(width: 8),
-                Text(
-                  'Auto Detect',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    widget.isShopkeeperMode
+                        ? 'Shopkeeper Order'
+                        : (_file != null || _analysis != null
+                              ? 'Per-Page Inspection'
+                              : 'Documents'),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -418,13 +581,7 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
                   children: [
-                    // Header Intro
-                    const PageIntro(
-                      title: 'Smart Document Analysis',
-                    ),
-                    const SizedBox(height: 14),
-
-                    // File Picker / Upload Box
+                    // File Picker / Upload Box (Direct document selection)
                     _buildUploadBox(theme),
                     const SizedBox(height: 18),
 
@@ -440,7 +597,11 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
                       const SizedBox(height: 18),
                       _buildPageGrid(theme),
                       const SizedBox(height: 18),
+                      _buildStudentSummary(theme),
+                      const SizedBox(height: 18),
                       _buildPrintOptionsCard(theme),
+                      const SizedBox(height: 18),
+                      _buildSpecialInstructionsCard(theme),
                     ],
                   ],
                 ),
@@ -507,7 +668,7 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _file?.name ?? 'Tap to Select Document for Auto Detect',
+                      _file?.name ?? 'Tap to Select Document',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -549,7 +710,6 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
       ),
     );
   }
-
 
   Widget _buildScanningAnimation(ThemeData theme) {
     return GlassPanel(
@@ -752,8 +912,6 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
     );
   }
 
-
-
   static const ColorFilter _grayscaleMatrixFilter = ColorFilter.matrix(<double>[
     0.2126,
     0.7152,
@@ -779,13 +937,12 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
 
   Widget _buildStudentSummary(ThemeData theme) {
     if (_analysis == null) return const SizedBox.shrink();
-    final total = _analysis!.totalPages;
-    final bwCount =
-        _analysis!.pages.where((p) => !p.isColor && !p.isBlank).length;
-    final colorCount =
-        _analysis!.pages.where((p) => p.isColor && !p.isBlank).length;
-    final colorPages = _analysis!.pages
-        .where((p) => p.isColor && !p.isBlank)
+    final originalTotal = _analysis!.totalPages;
+    final includedPages = _analysis!.pages
+        .where((p) => !p.isRemoved && (!_skipBlankPages || !p.isBlank))
+        .toList();
+    final colorPages = includedPages
+        .where((p) => p.isColor)
         .map((p) => p.pageNumber)
         .toList();
 
@@ -804,7 +961,7 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
               const SizedBox(width: 8),
               const Text(
                 'Student Print Summary',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
               ),
               const Spacer(),
               Container(
@@ -814,7 +971,7 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Total Pages: $total',
+                  'Original Pages: $originalTotal',
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
@@ -824,85 +981,11 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 8,
-                    horizontal: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blueGrey.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.blueGrey.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.filter_b_and_w_rounded,
-                        size: 16,
-                        color: Colors.blueGrey,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'B&W Pages: $bwCount',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 8,
-                    horizontal: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.palette_rounded,
-                        size: 16,
-                        color: Color(0xFF8B5CF6),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Color Pages: $colorCount',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          color: Color(0xFF8B5CF6),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
           if (colorPages.isNotEmpty) ...[
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 7,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               decoration: BoxDecoration(
                 color: const Color(0xFF8B5CF6).withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
@@ -911,36 +994,25 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
                 ),
               ),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Color Pages: ',
+                    'Colour Pages: ',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: 12,
+                      fontSize: 11.5,
                       color: Color(0xFF8B5CF6),
                     ),
                   ),
                   Expanded(
                     child: Text(
-                      formatPageRanges(colorPages),
+                      PdfPageFilterService().formatPageRanges(colorPages),
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: 12,
+                        fontSize: 11.5,
                       ),
                     ),
                   ),
                 ],
-              ),
-            ),
-          ] else ...[
-            const SizedBox(height: 6),
-            const Text(
-              'All pages set to Black & White (default)',
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey,
-                fontStyle: FontStyle.italic,
               ),
             ),
           ],
@@ -955,36 +1027,32 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Responsive Header preventing any RenderFlex overflow on narrow devices
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Column(
+              child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Per-Page Visual Inspection',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    'Tap card to toggle Color ↔ B&W • Long press for Blank',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            PopupMenuButton<PrintType>(
+            PopupMenuButton<String>(
               tooltip: 'Apply To All Pages',
-              onSelected: (type) => _applyToAllPages(type),
+              onSelected: (val) {
+                if (val == 'bw') _applyToAllPages(PrintType.bw);
+                if (val == 'color') _applyToAllPages(PrintType.color);
+                if (val == 'portrait') _applyToAllOrientation('Portrait');
+                if (val == 'landscape') _applyToAllOrientation('Landscape');
+              },
               itemBuilder: (context) => [
                 const PopupMenuItem(
-                  value: PrintType.bw,
+                  value: 'bw',
                   child: Row(
                     children: [
                       Icon(
@@ -998,7 +1066,7 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
                   ),
                 ),
                 const PopupMenuItem(
-                  value: PrintType.color,
+                  value: 'color',
                   child: Row(
                     children: [
                       Icon(
@@ -1008,6 +1076,35 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
                       ),
                       SizedBox(width: 8),
                       Text('Set All to Color'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'portrait',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.stay_current_portrait_rounded,
+                        size: 18,
+                        color: Colors.teal,
+                      ),
+                      SizedBox(width: 8),
+                      Text('Set All to Portrait'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'landscape',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.stay_current_landscape_rounded,
+                        size: 18,
+                        color: Colors.indigo,
+                      ),
+                      SizedBox(width: 8),
+                      Text('Set All to Landscape'),
                     ],
                   ),
                 ),
@@ -1071,13 +1168,9 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
         ),
         const SizedBox(height: 12),
 
-        // Student Summary
-        _buildStudentSummary(theme),
-        const SizedBox(height: 12),
-
         // Lazy-loaded horizontal preview for all pages
         SizedBox(
-          height: 236,
+          height: 220,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: pages.length,
@@ -1094,175 +1187,145 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
 
   Widget _pageThumbnail(PageAnalysis p, int index, ThemeData theme) {
     final isDark = theme.brightness == Brightness.dark;
+    final isRemoved = p.isRemoved;
     final isColor = p.isColor && !p.isBlank;
     final isBlank = p.isBlank;
 
     return GestureDetector(
       onTap: () => _togglePageColor(index),
-      onLongPress: () => _togglePageBlank(index),
-      child: AnimatedContainer(
+      onLongPress: () => _togglePageRemoval(index),
+      child: AnimatedOpacity(
         duration: const Duration(milliseconds: 200),
-        width: 144,
-        decoration: BoxDecoration(
-          color: theme.cardColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isBlank
-                ? Colors.grey.withValues(alpha: 0.3)
-                : isColor
-                ? const Color(0xFF8B5CF6)
-                : (isDark ? Colors.blueGrey.shade700 : Colors.grey.shade400),
-            width: isColor ? 2 : 1.2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isColor
-                  ? const Color(0xFF8B5CF6).withValues(alpha: 0.15)
-                  : Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+        opacity: isRemoved ? 0.38 : 1.0,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 144,
+          decoration: BoxDecoration(
+            color: isRemoved
+                ? (isDark ? Colors.grey.shade900 : Colors.grey.shade100)
+                : theme.cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isRemoved
+                  ? Colors.redAccent.withValues(alpha: 0.45)
+                  : isBlank
+                  ? Colors.grey.withValues(alpha: 0.3)
+                  : isColor
+                  ? const Color(0xFF8B5CF6)
+                  : (isDark ? Colors.blueGrey.shade700 : Colors.grey.shade400),
+              width: isRemoved ? 1.5 : (isColor ? 2 : 1.2),
             ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Page Number & Classification Badge
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    'Page ${p.pageNumber} of ${_analysis!.pages.length}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 10.5,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isBlank
-                        ? Colors.grey.withValues(alpha: 0.15)
-                        : isColor
-                        ? const Color(0xFF8B5CF6).withValues(alpha: 0.18)
-                        : Colors.blueGrey.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: isBlank
-                          ? Colors.grey.withValues(alpha: 0.3)
-                          : isColor
-                          ? const Color(0xFF8B5CF6).withValues(alpha: 0.5)
-                          : Colors.blueGrey.withValues(alpha: 0.4),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: Text(
-                    isBlank
-                        ? 'BLANK'
-                        : isColor
-                        ? 'COLOR'
-                        : 'B&W',
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.5,
-                      color: isBlank
-                          ? Colors.grey
-                          : isColor
-                          ? const Color(0xFF8B5CF6)
-                          : (isDark
-                                ? Colors.blueGrey.shade200
-                                : Colors.blueGrey.shade800),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-
-            // Actual Page Preview Canvas / Thumbnail
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.grey.shade300, width: 0.8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1.5),
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: isBlank
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.crop_portrait_rounded,
-                              size: 24,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'BLANK PAGE',
-                              style: TextStyle(
-                                fontSize: 8.5,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey.shade500,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ColorFiltered(
-                        // Requirement 13 & 14: If B&W, render in pure grayscale. If COLOR, render actual colors.
-                        colorFilter: isColor
-                            ? const ColorFilter.mode(
-                                Colors.transparent,
-                                BlendMode.multiply,
-                              )
-                            : _grayscaleMatrixFilter,
-                        child: _buildRealPageThumbnail(p),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 6),
-
-            // Override Hint
-            Center(
-              child: Text(
-                isBlank
-                    ? 'Blank'
+            boxShadow: [
+              BoxShadow(
+                color: isRemoved
+                    ? Colors.transparent
                     : isColor
-                        ? 'Tap for B&W'
-                        : 'Tap for Color',
+                    ? const Color(0xFF8B5CF6).withValues(alpha: 0.15)
+                    : Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Page Number Header
+              Text(
+                'Page ${p.pageNumber} of ${_analysis!.pages.length}',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 8.5,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurfaceVariant.withValues(
-                    alpha: 0.75,
-                  ),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 10.5,
+                  decoration: isRemoved ? TextDecoration.lineThrough : null,
+                  color: isRemoved
+                      ? Colors.redAccent.withValues(alpha: 0.7)
+                      : null,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+              const SizedBox(height: 6),
+
+              // Actual Page Preview Canvas / Thumbnail
+              Expanded(
+                child: Stack(
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isRemoved
+                              ? Colors.redAccent.withValues(alpha: 0.35)
+                              : Colors.grey.shade300,
+                          width: 0.8,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1.5),
+                          ),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: isBlank
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.crop_portrait_rounded,
+                                    size: 24,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'BLANK PAGE',
+                                    style: TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey.shade500,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ColorFiltered(
+                              colorFilter: isColor
+                                  ? const ColorFilter.mode(
+                                      Colors.transparent,
+                                      BlendMode.multiply,
+                                    )
+                                  : _grayscaleMatrixFilter,
+                              child: _buildRealPageThumbnail(p),
+                            ),
+                    ),
+                    if (isRemoved)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              Icons.block_rounded,
+                              color: Colors.white70,
+                              size: 26,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1519,7 +1582,9 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
         decoration: BoxDecoration(
           color: isSelected
               ? theme.colorScheme.primary.withValues(alpha: 0.12)
-              : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              : theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.35,
+                ),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isSelected
@@ -1608,7 +1673,10 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
                 onChanged: (v) => setState(() => _skipBlankPages = v),
                 title: Text(
                   'Skip ${_analysis!.blankPagesCount} Blank / Empty Pages',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
                 ),
                 subtitle: const Text(
                   'Exclude blank pages to save paper and printing fees.',
@@ -1632,7 +1700,9 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
             runSpacing: 8,
             children: _enabledPaperTypes.map((p) {
               final isSel = _selectedPaperTypeId == p.id;
-              final extra = p.price > 0 ? ' (+₹${p.price.toStringAsFixed(1)})' : '';
+              final extra = p.price > 0
+                  ? ' (+₹${p.price.toStringAsFixed(1)})'
+                  : '';
               return _buildSingleOptionCard(
                 label: p.name,
                 extraPrice: extra,
@@ -1646,8 +1716,6 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
           const SizedBox(height: 14),
           const Divider(height: 1),
           const SizedBox(height: 12),
-
-
 
           // 3. Finishing & Binding
           const Text(
@@ -1667,7 +1735,9 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
               ),
               ..._enabledBindings.map((b) {
                 final isSel = _selectedBindingId == b.id;
-                final extra = b.price > 0 ? ' (+₹${b.price.toStringAsFixed(0)})' : '';
+                final extra = b.price > 0
+                    ? ' (+₹${b.price.toStringAsFixed(0)})'
+                    : '';
                 return _buildSingleOptionCard(
                   label: b.name,
                   extraPrice: extra,
@@ -1731,10 +1801,53 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
     );
   }
 
+  Widget _buildSpecialInstructionsCard(ThemeData theme) {
+    return GlassPanel(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.notes_rounded, size: 18, color: AppTheme.primary),
+              SizedBox(width: 8),
+              Text(
+                'Special Instructions',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _specialInstructionsCtrl,
+            maxLines: 2,
+            decoration: InputDecoration(
+              hintText:
+                  'e.g. Please staple top-left, print cover page in high quality…',
+              hintStyle: TextStyle(
+                fontSize: 12.5,
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.7,
+                ),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   double _calculateTotalCost(ShopPrice prices) {
     if (_analysis == null) return 0.0;
     final effectivePages = _analysis!.pages
-        .where((p) => !_skipBlankPages || !p.isBlank)
+        .where((p) => !p.isRemoved && (!_skipBlankPages || !p.isBlank))
         .toList();
     if (effectivePages.isEmpty) return 0.0;
 
@@ -1749,10 +1862,12 @@ class _AutomaticDetectionScreenState extends State<AutomaticDetectionScreen>
     if (_doubleSided) {
       final bwSheets = (bwPages / 2).ceil();
       final colorSheets = (colorPages / 2).ceil();
-      basePrintTotal = (bwSheets * (prices.bwDouble + perPageExtra)) +
+      basePrintTotal =
+          (bwSheets * (prices.bwDouble + perPageExtra)) +
           (colorSheets * (prices.colorDouble + perPageExtra));
     } else {
-      basePrintTotal = (bwPages * (prices.bwSingle + perPageExtra)) +
+      basePrintTotal =
+          (bwPages * (prices.bwSingle + perPageExtra)) +
           (colorPages * (prices.colorSingle + perPageExtra));
     }
 

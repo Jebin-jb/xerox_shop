@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Exclude private print documents and student PDFs from automatic cloud backups -->
+    <exclude domain="root" path="app_print_vault" />
+    <exclude domain="file" path="app_print_vault" />
+</full-backup-content>

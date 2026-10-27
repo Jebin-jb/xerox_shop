@@ -33,8 +33,6 @@ class StudentOrders extends StatelessWidget {
           children: [
             PageIntro(
               title: 'My Print Orders',
-              subtitle:
-                  'Track status, view collection codes, and check payment status.',
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -99,6 +97,7 @@ class StudentOrders extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 14),
                   child: OrderCard(
                     order: o,
+                    onDelete: () => _confirmDelete(context, o),
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -116,5 +115,44 @@ class StudentOrders extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context, PrintOrder o) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete Order #${o.code}?'),
+        content: Text(
+          'Are you sure you want to remove Order #${o.code} (${o.fileName}) from your orders list?\n\n'
+          'Your payment and transaction history will be preserved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await dataService.softDeleteOrderForStudent(o.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Order #${o.code} removed from your list.'),
+            backgroundColor: Colors.blueGrey[800],
+          ),
+        );
+      }
+    }
   }
 }

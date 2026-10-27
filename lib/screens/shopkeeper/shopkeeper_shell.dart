@@ -7,7 +7,6 @@ import '../student/automatic_detection_screen.dart';
 import 'shop_dashboard.dart';
 import 'shop_orders.dart';
 import 'price_management.dart';
-import 'shop_reports.dart';
 import 'bank_payment_account_screen.dart';
 
 class ShopkeeperShell extends StatefulWidget {
@@ -28,8 +27,29 @@ class ShopkeeperShell extends StatefulWidget {
   State<ShopkeeperShell> createState() => _ShopkeeperShellState();
 }
 
-class _ShopkeeperShellState extends State<ShopkeeperShell> {
+class _ShopkeeperShellState extends State<ShopkeeperShell>
+    with WidgetsBindingObserver {
   int index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    widget.dataService.refreshOrders();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      widget.dataService.refreshOrders();
+    }
+  }
 
   UserProfile get _adminProfile =>
       widget.profile ??
@@ -104,11 +124,6 @@ class _ShopkeeperShellState extends State<ShopkeeperShell> {
         onToggleTheme: widget.onToggleTheme,
         onSignOut: _confirmSignOut,
       ),
-      ShopReports(
-        dataService: widget.dataService,
-        onToggleTheme: widget.onToggleTheme,
-        onSignOut: _confirmSignOut,
-      ),
       BankPaymentAccountScreen(
         dataService: widget.dataService,
         onToggleTheme: widget.onToggleTheme,
@@ -127,15 +142,18 @@ class _ShopkeeperShellState extends State<ShopkeeperShell> {
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final activeIndex = (index >= 0 && index < pages.length)
+                    ? index
+                    : 0;
                 if (isWide) {
                   return Row(
                     children: [
                       SizedBox(width: 270, child: _rail()),
-                      Expanded(child: pages[index]),
+                      Expanded(child: pages[activeIndex]),
                     ],
                   );
                 }
-                return pages[index];
+                return pages[activeIndex];
               },
             ),
           ),
@@ -182,9 +200,9 @@ class _ShopkeeperShellState extends State<ShopkeeperShell> {
               ),
               _buildNavItem(
                 2,
-                Icons.auto_awesome_outlined,
-                Icons.auto_awesome_rounded,
-                'Auto Detect',
+                Icons.add_circle_outline_rounded,
+                Icons.add_circle_rounded,
+                'Create Print Order',
                 theme,
               ),
               _buildNavItem(
@@ -192,13 +210,6 @@ class _ShopkeeperShellState extends State<ShopkeeperShell> {
                 Icons.currency_rupee_rounded,
                 Icons.currency_rupee_rounded,
                 'Prices',
-                theme,
-              ),
-              _buildNavItem(
-                4,
-                Icons.bar_chart_outlined,
-                Icons.bar_chart_rounded,
-                'Reports',
                 theme,
               ),
             ],
@@ -293,13 +304,11 @@ class _ShopkeeperShellState extends State<ShopkeeperShell> {
           const SizedBox(height: 6),
           _navItem(Icons.receipt_long_rounded, 'Orders Queue', 1),
           const SizedBox(height: 6),
-          _navItem(Icons.auto_awesome_rounded, 'Auto Detect', 2),
+          _navItem(Icons.add_circle_rounded, 'Create Print Order', 2),
           const SizedBox(height: 6),
           _navItem(Icons.currency_rupee_rounded, 'Price Control', 3),
           const SizedBox(height: 6),
-          _navItem(Icons.bar_chart_rounded, 'Reports & Profit', 4),
-          const SizedBox(height: 6),
-          _navItem(Icons.account_balance_rounded, 'Payment Account', 5),
+          _navItem(Icons.account_balance_rounded, 'Payment Account', 4),
           const Spacer(),
           IconButton(
             onPressed: widget.onToggleTheme,

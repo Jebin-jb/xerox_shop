@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_models.dart';
 import 'firebase_payment_config_service.dart';
+import 'supabase_config.dart';
 
 class DataService {
   final _pricesController = StreamController<ShopPrice>.broadcast();
@@ -35,6 +37,8 @@ class DataService {
   final Map<String, ExpenseEntry> _expenses = {};
   StreamSubscription? _remotePricingSub;
   StreamSubscription? _remoteAccountSub;
+  StreamSubscription? _remoteOrdersSub;
+  StreamSubscription? _remoteExpensesSub;
   Future<void>? _initFuture;
 
   DataService() {
@@ -50,10 +54,10 @@ class DataService {
 
   Future<void> _init() async {
     await _loadFromDisk();
-    if (_orders.isEmpty) {
-      _seedSampleData();
-      await _saveToDisk();
-    }
+    // Clean out any legacy mock demo orders from previous sessions
+    _orders.removeWhere((id, o) => id.startsWith('ord_'));
+    _expenses.removeWhere((id, e) => id.startsWith('exp_'));
+
     _emitPrices();
     _emitLivePricing();
     _emitPaymentAccount();
@@ -91,6 +95,45 @@ class DataService {
             },
             onError: (err) {
               debugPrint('Firestore remote account stream error: $err');
+            },
+          );
+
+      // Real-time synchronization for orders across all devices (fallback when Supabase is not active)
+      _remoteOrdersSub = FirebasePaymentConfigService.instance
+          .streamOrders()
+          .listen(
+            (remoteOrders) {
+              if (SupabaseConfig.isConfigured) {
+                // Supabase is the primary database; ignore stale Firestore order overwrites
+                return;
+              }
+              // Replace orders map with real Cloud Firestore state
+              _orders.clear();
+              for (final o in remoteOrders) {
+                _orders[o.id] = o;
+              }
+              _emitOrders();
+              _saveToDisk();
+            },
+            onError: (err) {
+              debugPrint('Firestore remote orders stream error: $err');
+            },
+          );
+
+      // Real-time synchronization for shopkeeper expenses across devices
+      _remoteExpensesSub = FirebasePaymentConfigService.instance
+          .streamExpenses()
+          .listen(
+            (remoteExpenses) {
+              _expenses.clear();
+              for (final e in remoteExpenses) {
+                _expenses[e.id] = e;
+              }
+              _emitExpenses();
+              _saveToDisk();
+            },
+            onError: (err) {
+              debugPrint('Firestore remote expenses stream error: $err');
             },
           );
     } catch (e) {
@@ -217,8 +260,17 @@ class DataService {
 
   Stream<List<PrintOrder>> studentOrders(String studentId) {
     return allOrders().map(
-      (orders) => orders.where((o) => o.studentId == studentId).toList(),
+      (orders) => orders
+          .where((o) => o.studentId == studentId && !o.isDeletedByStudent)
+          .toList(),
     );
+  }
+
+  Future<void> softDeleteOrderForStudent(String orderId) async {
+    await updateOrder(orderId, {
+      'isDeletedByStudent': true,
+      'is_deleted_by_student': true,
+    });
   }
 
   Stream<List<ExpenseEntry>> expenses() async* {
@@ -232,134 +284,26 @@ class DataService {
   void updateOrderLocally(PrintOrder order) {
     _orders[order.id] = order;
     _emitOrders();
+    _saveToDisk();
   }
 
-  void _seedSampleData() {
-    final now = DateTime.now();
-    final sampleOrders = [
-      PrintOrder(
-        id: 'ord_1',
-        code: 'A9K7M2',
-        studentId: 'student_demo_1',
-        studentName: 'Krishna Sharma',
-        studentEmail: 'student@college.ac.in',
-        fileName: 'Compiler_Design_Notes.pdf',
-        fileUrl: 'secure://vault/sample1/Compiler_Design_Notes.pdf',
-        fileSizeBytes: 4200000,
-        pages: 32,
-        copies: 1,
-        color: false,
-        doubleSided: true,
-        lamination: false,
-        binding: true,
-        total: 54.0,
-        paymentMode: PaymentMode.online,
-        paymentStatus: PaymentStatus.paid,
-        status: OrderStatus.pending,
-        createdAt: now.subtract(const Duration(minutes: 5)),
-      ),
-      PrintOrder(
-        id: 'ord_2',
-        code: 'P4X9L1',
-        studentId: 'student_2',
-        studentName: 'Aarav Kumar',
-        studentEmail: 'aarav.kumar@college.ac.in',
-        fileName: 'Project_Report_Final.pdf',
-        fileUrl: 'secure://vault/sample2/Project_Report_Final.pdf',
-        fileSizeBytes: 18500000,
-        pages: 45,
-        copies: 2,
-        color: true,
-        doubleSided: false,
-        lamination: true,
-        binding: true,
-        total: 520.0,
-        paymentMode: PaymentMode.counter,
-        paymentStatus: PaymentStatus.unpaid,
-        status: OrderStatus.printing,
-        createdAt: now.subtract(const Duration(minutes: 25)),
-      ),
-      PrintOrder(
-        id: 'ord_3',
-        code: 'H2W8N5',
-        studentId: 'student_3',
-        studentName: 'Priya Patel',
-        studentEmail: 'priya.patel@college.ac.in',
-        fileName: 'Lab_Manual_EE204.pdf',
-        fileUrl: 'secure://vault/sample3/Lab_Manual_EE204.pdf',
-        fileSizeBytes: 2400000,
-        pages: 14,
-        copies: 1,
-        color: false,
-        doubleSided: false,
-        lamination: false,
-        binding: false,
-        total: 14.0,
-        paymentMode: PaymentMode.online,
-        paymentStatus: PaymentStatus.paid,
-        status: OrderStatus.ready,
-        createdAt: now.subtract(const Duration(hours: 1, minutes: 10)),
-      ),
-      PrintOrder(
-        id: 'ord_4',
-        code: 'C7V3B9',
-        studentId: 'student_demo_1',
-        studentName: 'Krishna Sharma',
-        studentEmail: 'student@college.ac.in',
-        fileName: 'ID_Card_Govt_Form.jpg',
-        fileUrl: 'secure://vault/sample4/ID_Card_Govt_Form.jpg',
-        fileSizeBytes: 1200000,
-        pages: 1,
-        copies: 3,
-        color: true,
-        doubleSided: false,
-        lamination: true,
-        binding: false,
-        total: 45.0,
-        paymentMode: PaymentMode.online,
-        paymentStatus: PaymentStatus.paid,
-        status: OrderStatus.completed,
-        createdAt: now.subtract(const Duration(days: 1)),
-      ),
-    ];
-
-    for (final o in sampleOrders) {
-      _orders[o.id] = o;
-    }
-
-    final sampleExpenses = [
-      ExpenseEntry(
-        id: 'exp_1',
-        title: 'JK Copier A4 Paper 75 GSM (10 Bundles)',
-        amount: 2800.0,
-        category: 'Paper',
-        createdAt: now.subtract(const Duration(days: 2)),
-      ),
-      ExpenseEntry(
-        id: 'exp_2',
-        title: 'HP 88A Black Toner Cartridge Refill',
-        amount: 650.0,
-        category: 'Toner',
-        createdAt: now.subtract(const Duration(days: 4)),
-      ),
-      ExpenseEntry(
-        id: 'exp_3',
-        title: 'Spiral Binding Coils (Box of 100)',
-        amount: 420.0,
-        category: 'Binding Material',
-        createdAt: now.subtract(const Duration(days: 6)),
-      ),
-    ];
-
-    for (final e in sampleExpenses) {
-      _expenses[e.id] = e;
-    }
+  void removeOrderLocally(String id) {
+    _orders.remove(id);
+    _emitOrders();
+    _saveToDisk();
   }
+
+  void clearOrdersForTesting() {
+    _orders.clear();
+    _emitOrders();
+  }
+
+  Future<void> refreshOrders() async {}
 
   Future<LiveShopPricing> refreshPricingFromFirestore() async {
     try {
-      final remote =
-          await FirebasePaymentConfigService.instance.getLivePricing();
+      final remote = await FirebasePaymentConfigService.instance
+          .getLivePricing();
       if (remote != null) {
         _livePricing = remote;
         _prices = remote.toShopPrice();
@@ -434,14 +378,19 @@ class DataService {
   }
 
   String newCode() {
-    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
     final r = Random.secure();
     String code;
+    final activeOrders = _orders.values.where(
+      (o) =>
+          o.status != OrderStatus.completed &&
+          o.status != OrderStatus.cancelled &&
+          o.status != OrderStatus.rejected &&
+          !o.isDeletedFromQueue,
+    );
     do {
-      final letter = letters[r.nextInt(letters.length)];
-      final num = 100 + r.nextInt(900);
-      code = 'CP-$letter$num';
-    } while (_orders.values.any((o) => o.code == code));
+      final num = r.nextInt(10000);
+      code = num.toString().padLeft(4, '0');
+    } while (activeOrders.any((o) => o.code == code));
     return code;
   }
 
@@ -472,6 +421,9 @@ class DataService {
     int? colorPageCount,
     List<int>? colorPageNumbers,
     List<PagePrintSetting>? pageSettings,
+    String? originalFileName,
+    String? pageSelection,
+    bool isDeletedFromQueue = false,
   }) async {
     final id = 'order_${DateTime.now().microsecondsSinceEpoch}';
     final order = PrintOrder(
@@ -505,6 +457,9 @@ class DataService {
       colorPageCount: colorPageCount,
       colorPageNumbers: colorPageNumbers ?? const [],
       pageSettings: pageSettings ?? const [],
+      originalFileName: originalFileName,
+      pageSelection: pageSelection,
+      isDeletedFromQueue: isDeletedFromQueue,
     );
     _orders[id] = order;
     _emitOrders();
@@ -525,6 +480,11 @@ class DataService {
     if (existing == null) return;
 
     _orders[id] = existing.copyWith(
+      fileUrl: changes.containsKey('fileUrl')
+          ? changes['fileUrl']?.toString() ?? ''
+          : (changes.containsKey('file_url')
+                ? changes['file_url']?.toString() ?? ''
+                : existing.fileUrl),
       paymentMode: changes.containsKey('paymentMode')
           ? _enum(
               changes['paymentMode'],
@@ -561,19 +521,68 @@ class DataService {
           : existing.status,
       isDownloaded: changes.containsKey('isDownloaded')
           ? changes['isDownloaded'] == true
-          : existing.isDownloaded,
+          : (changes.containsKey('is_downloaded')
+                ? changes['is_downloaded'] == true
+                : existing.isDownloaded),
       isPurged: changes.containsKey('isPurged')
           ? changes['isPurged'] == true
-          : existing.isPurged,
+          : (changes.containsKey('is_purged')
+                ? changes['is_purged'] == true
+                : existing.isPurged),
       cancellationReason: changes.containsKey('cancellationReason')
           ? changes['cancellationReason']?.toString()
-          : existing.cancellationReason,
+          : (changes.containsKey('cancellation_reason')
+                ? changes['cancellation_reason']?.toString()
+                : (changes.containsKey('rejectionReason')
+                      ? changes['rejectionReason']?.toString()
+                      : (changes.containsKey('rejection_reason')
+                            ? changes['rejection_reason']?.toString()
+                            : existing.cancellationReason))),
       cancellationBy: changes.containsKey('cancellationBy')
           ? changes['cancellationBy']?.toString()
-          : existing.cancellationBy,
+          : (changes.containsKey('cancellation_by')
+                ? changes['cancellation_by']?.toString()
+                : existing.cancellationBy),
       refundStatus: changes.containsKey('refundStatus')
           ? changes['refundStatus']?.toString()
-          : existing.refundStatus,
+          : (changes.containsKey('refund_status')
+                ? changes['refund_status']?.toString()
+                : existing.refundStatus),
+      isDeletedFromQueue: changes.containsKey('isDeletedFromQueue')
+          ? changes['isDeletedFromQueue'] == true
+          : (changes.containsKey('is_deleted_from_queue')
+                ? changes['is_deleted_from_queue'] == true
+                : existing.isDeletedFromQueue),
+      isDeletedByStudent: changes.containsKey('isDeletedByStudent')
+          ? changes['isDeletedByStudent'] == true
+          : (changes.containsKey('is_deleted_by_student')
+                ? changes['is_deleted_by_student'] == true
+                : existing.isDeletedByStudent),
+      originalFileName: changes.containsKey('originalFileName')
+          ? changes['originalFileName']?.toString()
+          : existing.originalFileName,
+      pageSelection: changes.containsKey('pageSelection')
+          ? changes['pageSelection']?.toString()
+          : existing.pageSelection,
+      removalReason: changes.containsKey('removalReason')
+          ? changes['removalReason']?.toString()
+          : (changes.containsKey('removal_reason')
+                ? changes['removal_reason']?.toString()
+                : existing.removalReason),
+      removedAt: changes.containsKey('removedAt')
+          ? (changes['removedAt'] is DateTime
+                ? changes['removedAt'] as DateTime
+                : DateTime.tryParse('${changes['removedAt']}'))
+          : (changes.containsKey('removed_at')
+                ? (changes['removed_at'] is DateTime
+                      ? changes['removed_at'] as DateTime
+                      : DateTime.tryParse('${changes['removed_at']}'))
+                : existing.removedAt),
+      removedBy: changes.containsKey('removedBy')
+          ? changes['removedBy']?.toString()
+          : (changes.containsKey('removed_by')
+                ? changes['removed_by']?.toString()
+                : existing.removedBy),
     );
     _emitOrders();
     await _saveToDisk();
@@ -587,10 +596,32 @@ class DataService {
     } catch (_) {}
   }
 
-  Future<PrintOrder?> findByCode(String code) async {
+  Future<PrintOrder?> findByCode(
+    String code, {
+    bool isShopkeeper = true,
+  }) async {
+    if (!isShopkeeper) return null;
     final needle = code.trim().toUpperCase();
     for (final order in _orders.values) {
-      if (order.code == needle) return order;
+      if (order.code.toUpperCase() == needle) return order;
+    }
+    // Search directly in Cloud Firestore across devices
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('code', isEqualTo: needle)
+          .limit(1)
+          .get()
+          .timeout(const Duration(seconds: 4));
+      if (snap.docs.isNotEmpty) {
+        final doc = snap.docs.first;
+        final order = PrintOrder.fromMap(doc.id, doc.data());
+        _orders[order.id] = order;
+        _emitOrders();
+        return order;
+      }
+    } catch (e) {
+      debugPrint('Firestore findByCode notice: $e');
     }
     return null;
   }
@@ -612,20 +643,39 @@ class DataService {
     _expenses[id] = entry;
     _emitExpenses();
     await _saveToDisk();
+
+    try {
+      await FirebasePaymentConfigService.instance.saveExpense(entry);
+    } catch (e) {
+      debugPrint('Firestore saveExpense notice: $e');
+    }
   }
 
   static T _enum<T extends Enum>(dynamic val, List<T> values, T fallback) {
     if (val == null) return fallback;
-    final str = val.toString();
+    if (val is T && values.contains(val)) return val;
+    final rawStr = val.toString().trim();
+    if (rawStr.isEmpty) return fallback;
+    final clean = rawStr.contains('.') ? rawStr.split('.').last : rawStr;
+    final strLower = clean.toLowerCase();
     for (final item in values) {
-      if (item.name == str) return item;
+      if (item.name.toLowerCase() == strLower) return item;
     }
     if (T == PaymentStatus) {
-      if (str == 'refundPending') return PaymentStatus.refund_initiated as T;
-      if (str == 'verificationPending') {
-        return PaymentStatus.verification_pending as T;
+      final s = strLower.replaceAll('_', '').replaceAll('-', '');
+      if (s == 'unpaid') return PaymentStatus.unpaid as T;
+      if (s == 'refundpending' || s == 'refundinitiated') {
+        return PaymentStatus.refund_initiated as T;
       }
-      if (str == 'canceled') return PaymentStatus.cancelled as T;
+      if (s == 'verificationpending' || s == 'submitted') {
+        return PaymentStatus.payment_submitted as T;
+      }
+      if (s == 'paid') {
+        return PaymentStatus.paid as T;
+      }
+      if (s == 'canceled' || s == 'cancelled') {
+        return PaymentStatus.cancelled as T;
+      }
     }
     return fallback;
   }
@@ -633,6 +683,8 @@ class DataService {
   void dispose() {
     _remotePricingSub?.cancel();
     _remoteAccountSub?.cancel();
+    _remoteOrdersSub?.cancel();
+    _remoteExpensesSub?.cancel();
     _pricesController.close();
     _livePricingController.close();
     _paymentAccountController.close();

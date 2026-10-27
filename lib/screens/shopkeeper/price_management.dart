@@ -41,7 +41,7 @@ class _PriceManagementState extends State<PriceManagement>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _pricing = widget.dataService.currentLivePricing;
     _syncPrintingControllers();
     _initialized = true;
@@ -65,7 +65,8 @@ class _PriceManagementState extends State<PriceManagement>
   Future<void> _loadLatestFromFirestore() async {
     try {
       if (widget.dataService is SupabaseService) {
-        final latest = await (widget.dataService as SupabaseService).getFreshPrices();
+        final latest = await (widget.dataService as SupabaseService)
+            .getFreshPrices();
         if (mounted) {
           setState(() {
             _pricing = latest;
@@ -85,14 +86,14 @@ class _PriceManagementState extends State<PriceManagement>
   }
 
   void _syncPrintingControllers() {
-    bwSingleController.text =
-        _pricing.printingPrices.bwSinglePerSheet.toStringAsFixed(2);
-    bwDoubleController.text =
-        _pricing.printingPrices.bwDoublePerSheet.toStringAsFixed(2);
-    colorSingleController.text =
-        _pricing.printingPrices.colorSinglePerSheet.toStringAsFixed(2);
-    colorDoubleController.text =
-        _pricing.printingPrices.colorDoublePerSheet.toStringAsFixed(2);
+    bwSingleController.text = _pricing.printingPrices.bwSinglePerSheet
+        .toStringAsFixed(2);
+    bwDoubleController.text = _pricing.printingPrices.bwDoublePerSheet
+        .toStringAsFixed(2);
+    colorSingleController.text = _pricing.printingPrices.colorSinglePerSheet
+        .toStringAsFixed(2);
+    colorDoubleController.text = _pricing.printingPrices.colorDoublePerSheet
+        .toStringAsFixed(2);
   }
 
   Future<void> _persistChanges({String? message}) async {
@@ -120,9 +121,7 @@ class _PriceManagementState extends State<PriceManagement>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              message ?? 'Price updated successfully',
-            ),
+            content: Text(message ?? 'Price updated successfully'),
             backgroundColor: const Color(0xFF00C853),
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
@@ -183,9 +182,21 @@ class _PriceManagementState extends State<PriceManagement>
           enabled: false,
           updatedAt: DateTime.now(),
         );
+        final updatedAdd = List<AdditionalServiceItem>.from(
+          _pricing.additionalServices,
+        );
+        final aIdx = updatedAdd.indexWhere(
+          (a) =>
+              a.id == item.id ||
+              a.name.trim().toLowerCase() == item.name.trim().toLowerCase(),
+        );
+        if (aIdx != -1) {
+          updatedAdd[aIdx] = updatedAdd[aIdx].copyWith(isEnabled: false);
+        }
         setState(() {
           _pricing = _pricing.copyWith(
             configItems: updatedList,
+            additionalServices: updatedAdd,
             updatedAt: DateTime.now(),
           );
         });
@@ -288,8 +299,49 @@ class _PriceManagementState extends State<PriceManagement>
             FilledButton(
               onPressed: () {
                 final name = nameCtrl.text.trim();
-                if (name.isEmpty) return;
-                final price = double.tryParse(priceCtrl.text.trim()) ?? 0.0;
+                if (name.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Please enter a $categoryTitle name.'),
+                      backgroundColor: Colors.red[700],
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+                final price = double.tryParse(priceCtrl.text.trim());
+                if (price == null || price < 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Please enter a valid price (greater than or equal to 0).',
+                      ),
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
+                final duplicate = _pricing.configItems.any(
+                  (x) =>
+                      x.id != existing?.id &&
+                      x.category == selectedCategory &&
+                      x.name.trim().toLowerCase() == name.toLowerCase(),
+                );
+                if (duplicate) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'A $categoryTitle named "$name" already exists.',
+                      ),
+                      backgroundColor: Colors.orange[800],
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
                 final now = DateTime.now();
                 final id =
                     existing?.id ??
@@ -309,7 +361,9 @@ class _PriceManagementState extends State<PriceManagement>
                   _pricing.configItems,
                 );
                 if (existing != null) {
-                  final idx = updatedList.indexWhere((x) => x.id == existing.id);
+                  final idx = updatedList.indexWhere(
+                    (x) => x.id == existing.id,
+                  );
                   if (idx != -1) {
                     updatedList[idx] = item;
                   } else {
@@ -326,7 +380,10 @@ class _PriceManagementState extends State<PriceManagement>
                   );
                 });
                 Navigator.pop(ctx);
-                _persistChanges(message: '$name updated.');
+                _persistChanges(
+                  message:
+                      '$name ${existing == null ? "added" : "updated"} successfully.',
+                );
               },
               child: const Text('Save'),
             ),
@@ -377,10 +434,6 @@ class _PriceManagementState extends State<PriceManagement>
                     icon: Icon(Icons.book_outlined),
                     text: 'Finishing & Binding',
                   ),
-                  Tab(
-                    icon: Icon(Icons.add_box_outlined),
-                    text: 'Additional Services',
-                  ),
                 ],
               ),
               Expanded(
@@ -404,14 +457,6 @@ class _PriceManagementState extends State<PriceManagement>
                       icon: Icons.book_outlined,
                       fabTag: 'add_binding_finishing_fab',
                       allowCategorySelection: true,
-                    ),
-                    _buildConfigCategoryTab(
-                      theme: theme,
-                      category: 'additionalService',
-                      categoryTitle: 'Additional Service',
-                      items: _pricing.additionalServiceOptions,
-                      icon: Icons.miscellaneous_services_rounded,
-                      fabTag: 'add_additional_fab',
                     ),
                   ],
                 ),
@@ -451,35 +496,6 @@ class _PriceManagementState extends State<PriceManagement>
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.teal.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.bolt_rounded,
-                            size: 12,
-                            color: Colors.teal,
-                          ),
-                          SizedBox(width: 2),
-                          Text(
-                            'LIVE SYNC',
-                            style: TextStyle(
-                              color: Colors.teal,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 9.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -491,7 +507,10 @@ class _PriceManagementState extends State<PriceManagement>
                     icon: const Icon(Icons.refresh_rounded, size: 20),
                     tooltip: 'Refresh prices',
                     visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     padding: EdgeInsets.zero,
                   ),
                   IconButton(
@@ -504,7 +523,10 @@ class _PriceManagementState extends State<PriceManagement>
                     ),
                     tooltip: 'Toggle Theme',
                     visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     padding: EdgeInsets.zero,
                   ),
                   IconButton(
@@ -516,7 +538,10 @@ class _PriceManagementState extends State<PriceManagement>
                     ),
                     tooltip: 'Sign Out',
                     visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     padding: EdgeInsets.zero,
                   ),
                 ],
@@ -543,7 +568,6 @@ class _PriceManagementState extends State<PriceManagement>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-
           // Black & White Printing Card
           Card(
             elevation: 0,
@@ -675,7 +699,11 @@ class _PriceManagementState extends State<PriceManagement>
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.color_lens_rounded, color: Colors.deepPurple, size: 20),
+                      Icon(
+                        Icons.color_lens_rounded,
+                        color: Colors.deepPurple,
+                        size: 20,
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'Color Printing',
@@ -776,9 +804,7 @@ class _PriceManagementState extends State<PriceManagement>
               style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
               onPressed: _saving
                   ? null
-                  : () => _persistChanges(
-                        message: 'Printing prices saved.',
-                      ),
+                  : () => _persistChanges(message: 'Printing prices saved.'),
               icon: _saving
                   ? const SizedBox(
                       width: 18,
@@ -844,15 +870,16 @@ class _PriceManagementState extends State<PriceManagement>
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    FilledButton.icon(
-                      onPressed: () => _openConfigItemDialog(
-                        defaultCategory: category,
-                        categoryTitle: categoryTitle,
-                        allowCategorySelection: allowCategorySelection,
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tap "Add $categoryTitle" below to configure a new option.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
-                      icon: const Icon(Icons.add_rounded),
-                      label: Text('Add First $categoryTitle'),
                     ),
                   ],
                 ),
@@ -885,7 +912,9 @@ class _PriceManagementState extends State<PriceManagement>
                         CircleAvatar(
                           radius: 18,
                           backgroundColor: item.enabled
-                              ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                              ? theme.colorScheme.primary.withValues(
+                                  alpha: 0.12,
+                                )
                               : Colors.grey.withValues(alpha: 0.15),
                           child: Icon(
                             icon,
@@ -928,7 +957,9 @@ class _PriceManagementState extends State<PriceManagement>
                                         vertical: 1,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.red.withValues(alpha: 0.1),
+                                        color: Colors.red.withValues(
+                                          alpha: 0.1,
+                                        ),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: const Text(
@@ -1002,9 +1033,24 @@ class _PriceManagementState extends State<PriceManagement>
                                       enabled: val,
                                       updatedAt: DateTime.now(),
                                     );
+                                    final updatedAdd =
+                                        List<AdditionalServiceItem>.from(
+                                          _pricing.additionalServices,
+                                        );
+                                    final aIdx = updatedAdd.indexWhere(
+                                      (a) =>
+                                          a.id == item.id ||
+                                          a.name.trim().toLowerCase() ==
+                                              item.name.trim().toLowerCase(),
+                                    );
+                                    if (aIdx != -1) {
+                                      updatedAdd[aIdx] = updatedAdd[aIdx]
+                                          .copyWith(isEnabled: val);
+                                    }
                                     setState(() {
                                       _pricing = _pricing.copyWith(
                                         configItems: updatedList,
+                                        additionalServices: updatedAdd,
                                         updatedAt: DateTime.now(),
                                       );
                                     });
@@ -1017,7 +1063,10 @@ class _PriceManagementState extends State<PriceManagement>
                               ),
                             ),
                             PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_vert_rounded, size: 18),
+                              icon: const Icon(
+                                Icons.more_vert_rounded,
+                                size: 18,
+                              ),
                               padding: EdgeInsets.zero,
                               tooltip: 'Actions',
                               onSelected: (val) {

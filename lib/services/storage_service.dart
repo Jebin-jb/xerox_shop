@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -43,13 +44,12 @@ class StorageService {
     final safeName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final storagePath = '$uid/${timestamp}_$safeName';
+    final mimeType = _getMimeType(fileName);
 
-    // 1. If Supabase is connected, upload to Supabase Storage bucket
+    // 1. Primary: Upload to Supabase Storage private bucket if configured
     if (isSupabaseLive) {
       try {
         final client = Supabase.instance.client;
-        final mimeType = _getMimeType(fileName);
-
         onProgress?.call(0.3);
         await client.storage
             .from(SupabaseConfig.documentsBucket)
@@ -58,21 +58,58 @@ class StorageService {
               data,
               fileOptions: FileOptions(contentType: mimeType, upsert: true),
             );
+        onProgress?.call(0.8);
+
         // Generate clean public URL for instant previewing and downloading
-        final publicUrl = client.storage
-            .from(SupabaseConfig.documentsBucket)
-            .getPublicUrl(storagePath);
+        String fileUrl;
+        try {
+          fileUrl = client.storage
+              .from(SupabaseConfig.documentsBucket)
+              .getPublicUrl(storagePath);
+        } catch (_) {
+          fileUrl = await client.storage
+              .from(SupabaseConfig.documentsBucket)
+              .createSignedUrl(storagePath, 172800);
+        }
 
         onProgress?.call(1.0);
-        _cloudVault[publicUrl] = data;
+        _cloudVault[fileUrl] = data;
         _cloudVault[storagePath] = data;
-        return publicUrl;
+        return fileUrl;
       } catch (e) {
-        debugPrint('Supabase Storage upload error (falling back to vault): $e');
+        debugPrint('Supabase Storage upload notice: $e');
       }
     }
 
-    // 2. Fallback in-memory vault for demo / offline mode
+    // 2. Secondary fallback: Firebase Storage (if configured)
+    try {
+      final storageRef = FirebaseStorage.instance.ref().child(
+        'orders/$uid/${timestamp}_$safeName',
+      );
+      onProgress?.call(0.2);
+      final metadata = SettableMetadata(
+        contentType: mimeType,
+        customMetadata: {'uploadedBy': uid, 'fileName': fileName},
+      );
+      final uploadTask = storageRef.putData(data, metadata);
+      uploadTask.snapshotEvents.listen((taskSnapshot) {
+        if (taskSnapshot.totalBytes > 0) {
+          final progress =
+              taskSnapshot.bytesTransferred / taskSnapshot.totalBytes;
+          onProgress?.call(progress);
+        }
+      });
+      final snapshot = await uploadTask.timeout(const Duration(seconds: 15));
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+      _cloudVault[downloadUrl] = data;
+      _cloudVault[storagePath] = data;
+      onProgress?.call(1.0);
+      return downloadUrl;
+    } catch (e) {
+      debugPrint('Firebase Storage upload notice: $e');
+    }
+
+    // 3. Fallback in-memory vault for demo / unconfigured mode only
     final uniqueMarker = base64UrlEncode(
       utf8.encode('$uid:$safeName:${DateTime.now().microsecondsSinceEpoch}'),
     );
@@ -101,6 +138,25 @@ class StorageService {
         : (ext == 'jpg' || ext == 'jpeg' ? 'image/jpeg' : 'image/png');
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final storagePath = 'shop_qr_$timestamp.$ext';
+
+    // 1. Primary: Upload to Firebase Storage
+    try {
+      final ref = FirebaseStorage.instance.ref().child(
+        'payment_qr/qr_$timestamp.$ext',
+      );
+      final metadata = SettableMetadata(contentType: mimeType);
+      final snapshot = await ref
+          .putData(bytes, metadata)
+          .timeout(const Duration(seconds: 15));
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+      _cloudVault[downloadUrl] = bytes;
+      _cloudVault[storagePath] = bytes;
+      return downloadUrl;
+    } catch (e) {
+      debugPrint(
+        'Firebase Storage uploadPaymentQr notice (trying fallback): $e',
+      );
+    }
 
     if (isSupabaseLive) {
       try {
@@ -185,11 +241,19 @@ class StorageService {
       }
     }
 
-    // 2. Direct HTTP GET for Signed URLs
+    // 2. Direct HTTP GET for Signed URLs or Public Storage URLs
     if (fileUrl.startsWith('http')) {
       try {
         final httpClient = HttpClient();
         final request = await httpClient.getUrl(Uri.parse(fileUrl));
+        if (fileUrl.contains(SupabaseConfig.supabaseUrl) &&
+            SupabaseConfig.supabaseAnonKey.isNotEmpty) {
+          request.headers.set('apikey', SupabaseConfig.supabaseAnonKey);
+          request.headers.set(
+            'Authorization',
+            'Bearer ${SupabaseConfig.supabaseAnonKey}',
+          );
+        }
         final response = await request.close();
         if (response.statusCode == 200) {
           final bytes = await consolidateHttpClientResponseBytes(response);
@@ -203,6 +267,21 @@ class StorageService {
         debugPrint('HTTP direct download notice: $e');
       }
     }
+
+    // 3. Local filesystem fallback (if fileUrl points to a local file)
+    try {
+      final cleanPath = fileUrl.startsWith('file://')
+          ? fileUrl.replaceFirst('file://', '')
+          : fileUrl;
+      final file = File(cleanPath);
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        if (bytes.isNotEmpty) {
+          _cloudVault[fileUrl] = bytes;
+          return bytes;
+        }
+      }
+    } catch (_) {}
 
     return null;
   }
@@ -237,43 +316,81 @@ class StorageService {
     required Uint8List bytes,
     String? orderCode,
   }) async {
-    try {
-      Directory? targetDir;
-      if (!kIsWeb) {
-        if (Platform.isAndroid) {
-          final androidDownload = Directory('/storage/emulated/0/Download');
-          if (await androidDownload.exists()) {
-            targetDir = androidDownload;
-          }
+    if (kIsWeb) return null;
+    final safeName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final prefix = orderCode != null ? '${orderCode}_' : '';
+    final outName = '$prefix$safeName';
+
+    final candidateDirs = <Directory>[];
+
+    if (Platform.isAndroid) {
+      try {
+        final androidDownload = Directory('/storage/emulated/0/Download');
+        if (await androidDownload.exists()) {
+          candidateDirs.add(androidDownload);
         }
-        targetDir ??=
-            await getDownloadsDirectory() ??
-            await getApplicationDocumentsDirectory();
-      }
+      } catch (_) {}
 
-      if (targetDir == null) return null;
+      try {
+        final extDirs = await getExternalStorageDirectories(
+          type: StorageDirectory.downloads,
+        );
+        if (extDirs != null && extDirs.isNotEmpty) {
+          candidateDirs.addAll(extDirs);
+        }
+      } catch (_) {}
 
-      final safeName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-      final prefix = orderCode != null ? '${orderCode}_' : '';
-      final filePath = '${targetDir.path}/$prefix$safeName';
-      final file = File(filePath);
-      await file.writeAsBytes(bytes);
-      debugPrint('File saved to device at: $filePath');
-      return filePath;
-    } catch (e) {
-      debugPrint('Error saving file to local device: $e');
-      return null;
+      try {
+        final extStorageDir = await getExternalStorageDirectory();
+        if (extStorageDir != null) {
+          candidateDirs.add(extStorageDir);
+        }
+      } catch (_) {}
     }
+
+    try {
+      final dlDir = await getDownloadsDirectory();
+      if (dlDir != null) candidateDirs.add(dlDir);
+    } catch (_) {}
+
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      candidateDirs.add(docDir);
+    } catch (_) {}
+
+    for (final dir in candidateDirs) {
+      try {
+        if (!await dir.exists()) {
+          await dir.create(recursive: true);
+        }
+        final filePath = '${dir.path}/$outName';
+        final file = File(filePath);
+        await file.writeAsBytes(bytes, flush: true);
+        debugPrint('File saved to device at: $filePath');
+        return filePath;
+      } catch (e) {
+        debugPrint(
+          'Could not save to ${dir.path} ($e), trying next candidate...',
+        );
+      }
+    }
+
+    debugPrint('Error: Could not save file to any candidate device location.');
+    return null;
   }
 
   /// Completely deletes and erases document from the in-app vault, local device storage,
-  /// and Supabase Cloud storage after printing is finished
-  Future<void> deleteAfterPrinting({
+  /// and Supabase Cloud storage after printing is finished.
+  /// Returns true if the document was successfully deleted from storage (or already removed).
+  Future<bool> deleteAfterPrinting({
     required String fileUrl,
     required String fileName,
     String? orderId,
     String? orderCode,
   }) async {
+    bool cloudSuccess = true;
+    bool localSuccess = true;
+
     // 1. Delete from memory cache
     _cloudVault.remove(fileUrl);
     final relativePath = _extractStoragePath(fileUrl);
@@ -281,10 +398,12 @@ class StorageService {
       _cloudVault.remove(relativePath);
     }
 
-    // 2. Delete from private in-app vault
+    // 2. Delete from private in-app vault on this device
     if (!kIsWeb && orderId != null) {
       try {
-        final docDir = await getApplicationDocumentsDirectory();
+        final docDir = await getApplicationDocumentsDirectory().timeout(
+          const Duration(milliseconds: 600),
+        );
         final safeName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
         final vaultFile = File(
           '${docDir.path}/app_print_vault/${orderId}_$safeName',
@@ -298,18 +417,58 @@ class StorageService {
       }
     }
 
-    // 3. Delete from public device Downloads folder if saved
+    // 3. Delete from device storage (only files saved with this order's prefix)
     if (!kIsWeb) {
       try {
         final safeName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
         final prefix = orderCode != null ? '${orderCode}_' : '';
+        final candidates = <File>[];
+
         if (Platform.isAndroid) {
-          final downloadFile = File(
-            '/storage/emulated/0/Download/$prefix$safeName',
+          candidates.add(File('/storage/emulated/0/Download/$prefix$safeName'));
+          try {
+            final extDirs = await getExternalStorageDirectories(
+              type: StorageDirectory.downloads,
+            );
+            if (extDirs != null) {
+              for (final d in extDirs) {
+                candidates.add(File('${d.path}/$prefix$safeName'));
+              }
+            }
+          } catch (_) {}
+          try {
+            final extDir = await getExternalStorageDirectory();
+            if (extDir != null) {
+              candidates.add(File('${extDir.path}/$prefix$safeName'));
+            }
+          } catch (_) {}
+        }
+        try {
+          final dlDir = await getDownloadsDirectory().timeout(
+            const Duration(milliseconds: 600),
           );
-          if (await downloadFile.exists()) {
-            await downloadFile.delete();
-            debugPrint('Erased from Android Downloads: ${downloadFile.path}');
+          if (dlDir != null) {
+            candidates.add(File('${dlDir.path}/$prefix$safeName'));
+          }
+        } catch (_) {}
+
+        try {
+          final docDir = await getApplicationDocumentsDirectory().timeout(
+            const Duration(milliseconds: 600),
+          );
+          candidates.add(File('${docDir.path}/$prefix$safeName'));
+        } catch (_) {}
+
+        for (final file in candidates) {
+          try {
+            if (await file.exists()) {
+              await file.delete();
+              debugPrint(
+                'Erased from shopkeeper device downloads: ${file.path}',
+              );
+            }
+          } catch (e) {
+            debugPrint('Error clearing local download file ${file.path}: $e');
           }
         }
       } catch (e) {
@@ -317,20 +476,36 @@ class StorageService {
       }
     }
 
-    // 4. Delete from Supabase Cloud Storage bucket
-    if (isSupabaseLive && fileUrl.startsWith('http') && relativePath != null) {
+    // 4. Delete from Supabase Cloud Storage bucket 'xerox-documents'
+    if (isSupabaseLive &&
+        fileUrl.isNotEmpty &&
+        relativePath != null &&
+        !fileUrl.startsWith('secure://')) {
       try {
         final client = Supabase.instance.client;
-        await client.storage.from(SupabaseConfig.documentsBucket).remove([
-          relativePath,
-        ]);
+        final res = await client.storage
+            .from(SupabaseConfig.documentsBucket)
+            .remove([relativePath]);
         debugPrint(
-          'Securely erased from Supabase Cloud Storage: $relativePath',
+          'Securely erased from Supabase Cloud Storage: $relativePath ($res)',
         );
       } catch (e) {
         debugPrint('Error erasing from Supabase storage: $e');
+        cloudSuccess = false;
       }
     }
+
+    // 5. Delete from Firebase Storage if applicable
+    if (fileUrl.contains('firebasestorage.googleapis.com')) {
+      try {
+        await FirebaseStorage.instance.refFromURL(fileUrl).delete();
+        debugPrint('Securely erased file from Firebase Storage: $fileUrl');
+      } catch (e) {
+        debugPrint('Firebase Storage delete notice: $e');
+      }
+    }
+
+    return cloudSuccess && localSuccess;
   }
 
   /// Delete/erase document from database storage after shopkeeper downloads it
@@ -339,6 +514,16 @@ class StorageService {
     final relativePath = _extractStoragePath(fileUrl);
     if (relativePath != null) {
       _cloudVault.remove(relativePath);
+    }
+
+    if (fileUrl.contains('firebasestorage.googleapis.com')) {
+      try {
+        await FirebaseStorage.instance.refFromURL(fileUrl).delete();
+        debugPrint('Securely erased file from Firebase Storage: $fileUrl');
+        return true;
+      } catch (e) {
+        debugPrint('Firebase Storage delete notice: $e');
+      }
     }
 
     if (isSupabaseLive && fileUrl.startsWith('http') && relativePath != null) {
@@ -368,6 +553,11 @@ class StorageService {
         if (bucketIndex != -1 && bucketIndex < pathSegments.length - 1) {
           return pathSegments.sublist(bucketIndex + 1).join('/');
         }
+      } else if (fileUrl.isNotEmpty && !fileUrl.startsWith('secure://')) {
+        if (fileUrl.contains('${SupabaseConfig.documentsBucket}/')) {
+          return fileUrl.split('${SupabaseConfig.documentsBucket}/').last;
+        }
+        return fileUrl;
       }
     } catch (_) {}
     return null;

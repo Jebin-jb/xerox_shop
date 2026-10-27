@@ -138,7 +138,9 @@ class FirebasePaymentConfigService {
           .set(account.toPaymentConfig().toMap(), SetOptions(merge: true))
           .timeout(const Duration(seconds: 3));
     } catch (e) {
-      debugPrint('FirebasePaymentConfigService updatePaymentAccount notice: $e');
+      debugPrint(
+        'FirebasePaymentConfigService updatePaymentAccount notice: $e',
+      );
     }
   }
 
@@ -188,7 +190,9 @@ class FirebasePaymentConfigService {
   Future<void> updateLivePricing(LiveShopPricing pricing) async {
     final doc = _pricingDoc;
     if (doc == null) {
-      debugPrint('Firestore not initialized; skipping live pricing cloud write.');
+      debugPrint(
+        'Firestore not initialized; skipping live pricing cloud write.',
+      );
       return;
     }
     try {
@@ -197,7 +201,9 @@ class FirebasePaymentConfigService {
           .timeout(
             const Duration(seconds: 3),
             onTimeout: () {
-              debugPrint('Firestore updateLivePricing timed out: queued locally');
+              debugPrint(
+                'Firestore updateLivePricing timed out: queued locally',
+              );
             },
           );
     } catch (e) {
@@ -208,17 +214,47 @@ class FirebasePaymentConfigService {
   CollectionReference<Map<String, dynamic>>? get _ordersCollection =>
       _firestore?.collection('orders');
 
+  CollectionReference<Map<String, dynamic>>? get _expensesCollection =>
+      _firestore?.collection('expenses');
+
+  /// Streams real-time order updates from Cloud Firestore
+  Stream<List<PrintOrder>> streamOrders() {
+    final col = _ordersCollection;
+    if (col == null) return const Stream.empty();
+    return col
+        .snapshots()
+        .map((snapshot) {
+          final List<PrintOrder> list = [];
+          for (final doc in snapshot.docs) {
+            try {
+              list.add(PrintOrder.fromMap(doc.id, doc.data()));
+            } catch (e) {
+              debugPrint('Error parsing Firestore order ${doc.id}: $e');
+            }
+          }
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return list;
+        })
+        .handleError((err) {
+          debugPrint('Firebase orders stream error: $err');
+          return <PrintOrder>[];
+        });
+  }
+
   /// Persists order to Firestore with special instructions and all configuration options
   Future<void> saveOrder(PrintOrder order) async {
     final col = _ordersCollection;
     if (col == null) return;
     try {
+      final data = order.toMap();
+      data['updatedAt'] = FieldValue.serverTimestamp();
       await col
           .doc(order.id)
-          .set(order.toMap(), SetOptions(merge: true))
-          .timeout(const Duration(seconds: 3));
+          .set(data, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 4));
     } catch (e) {
       debugPrint('FirebasePaymentConfigService saveOrder notice: $e');
+      rethrow;
     }
   }
 
@@ -230,12 +266,55 @@ class FirebasePaymentConfigService {
     final col = _ordersCollection;
     if (col == null) return;
     try {
+      final data = Map<String, dynamic>.from(changes);
+      data['updatedAt'] = FieldValue.serverTimestamp();
       await col
           .doc(orderId)
-          .set(changes, SetOptions(merge: true))
-          .timeout(const Duration(seconds: 3));
+          .set(data, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 4));
     } catch (e) {
-      debugPrint('FirebasePaymentConfigService updateFirestoreOrder notice: $e');
+      debugPrint(
+        'FirebasePaymentConfigService updateFirestoreOrder notice: $e',
+      );
+      rethrow;
+    }
+  }
+
+  /// Streams real-time expenses from Cloud Firestore
+  Stream<List<ExpenseEntry>> streamExpenses() {
+    final col = _expensesCollection;
+    if (col == null) return const Stream.empty();
+    return col
+        .snapshots()
+        .map((snapshot) {
+          final List<ExpenseEntry> list = [];
+          for (final doc in snapshot.docs) {
+            try {
+              list.add(ExpenseEntry.fromMap(doc.id, doc.data()));
+            } catch (e) {
+              debugPrint('Error parsing Firestore expense ${doc.id}: $e');
+            }
+          }
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return list;
+        })
+        .handleError((err) {
+          debugPrint('Firebase expenses stream error: $err');
+          return <ExpenseEntry>[];
+        });
+  }
+
+  /// Persists expense to Cloud Firestore
+  Future<void> saveExpense(ExpenseEntry expense) async {
+    final col = _expensesCollection;
+    if (col == null) return;
+    try {
+      await col
+          .doc(expense.id)
+          .set(expense.toMap(), SetOptions(merge: true))
+          .timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint('Firebase saveExpense notice: $e');
     }
   }
 }

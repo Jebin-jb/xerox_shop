@@ -5,15 +5,13 @@ import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass.dart';
 import 'automatic_detection_screen.dart';
-import 'create_order.dart';
 
-class StudentHome extends StatelessWidget {
+class StudentHome extends StatefulWidget {
   final AuthService auth;
   final DataService dataService;
   final UserProfile profile;
   final VoidCallback onToggleTheme;
   final VoidCallback onSignOut;
-  final VoidCallback? onNavigateToAutoDetect;
 
   const StudentHome({
     super.key,
@@ -22,20 +20,54 @@ class StudentHome extends StatelessWidget {
     required this.profile,
     required this.onToggleTheme,
     required this.onSignOut,
-    this.onNavigateToAutoDetect,
   });
+
+  @override
+  State<StudentHome> createState() => _StudentHomeState();
+}
+
+class _StudentHomeState extends State<StudentHome> {
+  bool _isPicking = false;
+
+  Future<void> _handleCreatePrintOrder() async {
+    if (_isPicking) return;
+    setState(() => _isPicking = true);
+
+    try {
+      final pickedResult = await AutomaticDetectionScreen.pickDocument(context);
+      if (pickedResult != null && mounted) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AutomaticDetectionScreen(
+              dataService: widget.dataService,
+              profile: widget.profile,
+              onToggleTheme: widget.onToggleTheme,
+              initialFile: pickedResult.file,
+              initialBytes: pickedResult.bytes,
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPicking = false);
+      } else {
+        _isPicking = false;
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return StreamBuilder<LiveShopPricing>(
-      stream: dataService.livePricing(),
-      initialData: dataService.currentLivePricing,
+      stream: widget.dataService.livePricing(),
+      initialData: widget.dataService.currentLivePricing,
       builder: (context, snap) {
-        final pricing = snap.data ?? dataService.currentLivePricing;
-        final p = pricing.toShopPrice();
-        final firstName = profile.name.split(' ').first;
+        final pricing = snap.data ?? widget.dataService.currentLivePricing;
+        final firstName = widget.profile.name.split(' ').first;
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
@@ -49,7 +81,7 @@ class StudentHome extends StatelessWidget {
                 children: [
                   IconButton(
                     tooltip: isDark ? 'Light Mode' : 'Dark Mode',
-                    onPressed: onToggleTheme,
+                    onPressed: widget.onToggleTheme,
                     icon: Icon(
                       isDark
                           ? Icons.light_mode_rounded
@@ -58,7 +90,7 @@ class StudentHome extends StatelessWidget {
                   ),
                   IconButton(
                     tooltip: 'Sign Out',
-                    onPressed: onSignOut,
+                    onPressed: widget.onSignOut,
                     icon: const Icon(
                       Icons.logout_rounded,
                       color: Colors.redAccent,
@@ -69,217 +101,96 @@ class StudentHome extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // Hero Action Banner
+            // Create Print Order Action
             GlassPanel(
-              padding: EdgeInsets.zero,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF6750F4), Color(0xFF00A2FF)],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF6750F4).withValues(alpha: 0.3),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Text(
-                        '⚡ FAST TRACK PRINTING',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Skip the Xerox queue.',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Upload document • choose paper & binding • calculate price • pickup directly!',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13.5,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 10,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => CreateOrder(
-                                dataService: dataService,
-                                profile: profile,
-                                prices: p,
-                                onToggleTheme: onToggleTheme,
-                              ),
-                            ),
-                          ),
-                          icon: const Icon(Icons.add_rounded),
-                          label: const Text('Create Print Order'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: AppTheme.primary,
-                            elevation: 3,
-                            textStyle: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed:
-                              onNavigateToAutoDetect ??
-                              () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => AutomaticDetectionScreen(
-                                    dataService: dataService,
-                                    profile: profile,
-                                    onToggleTheme: onToggleTheme,
-                                  ),
-                                ),
-                              ),
-                          icon: const Icon(
-                            Icons.auto_awesome_rounded,
-                            color: Colors.white,
-                          ),
-                          label: const Text(
-                            'Auto Detect',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(
-                              color: Colors.white70,
-                              width: 1.5,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // Auto Detection Feature Card
-            GlassPanel(
-              padding: const EdgeInsets.all(16),
-              onTap:
-                  onNavigateToAutoDetect ??
-                  () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AutomaticDetectionScreen(
-                        dataService: dataService,
-                        profile: profile,
-                        onToggleTheme: onToggleTheme,
-                      ),
-                    ),
-                  ),
-              child: Row(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF6750F4), Color(0xFF00A2FF)],
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF6750F4), Color(0xFF00A2FF)],
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.description_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                       ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.auto_awesome_rounded,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Auto Detect',
+                            const Text(
+                              'New Print Job',
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
-                                fontSize: 14,
+                                fontSize: 16,
                               ),
                             ),
-                            SizedBox(width: 6),
+                            const SizedBox(height: 3),
                             Text(
-                              'NEW',
+                              'Select documents, configure print settings, and pay',
                               style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                                color: AppTheme.primary,
-                                letterSpacing: 0.5,
+                                fontSize: 12.5,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Detect pages, color distribution & optimize print cost.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton.icon(
+                      onPressed: _isPicking ? null : _handleCreatePrintOrder,
+                      icon: _isPicking
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.add_rounded, size: 20),
+                      label: Text(
+                        _isPicking
+                            ? 'Opening Document Picker…'
+                            : 'Create Print Order',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
                         ),
-                      ],
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                     ),
                   ),
-                  const Icon(Icons.chevron_right_rounded),
                 ],
               ),
             ),
 
             const SizedBox(height: 26),
-            const PageIntro(
-              title: 'Live Shop Rates',
-              subtitle:
-                  'Current price list maintained directly by the campus Xerox shop (view only).',
-            ),
+            const PageIntro(title: 'Live Shop Rates'),
             const SizedBox(height: 14),
 
             // 1. PRINTING (PER SHEET)
@@ -357,26 +268,6 @@ class StudentHome extends StatelessWidget {
                   )
                   .toList(),
             ),
-            const SizedBox(height: 14),
-
-            // 5. ADDITIONAL SERVICES
-            if (pricing.additionalServices.any((s) => s.isEnabled)) ...[
-              _buildCategorySection(
-                title: 'ADDITIONAL SERVICES',
-                icon: Icons.miscellaneous_services_rounded,
-                items: pricing.additionalServices
-                    .where((s) => s.isEnabled)
-                    .map(
-                      (s) => _RateItem(
-                        name: s.name,
-                        price: s.price,
-                        unit: ' (${s.pricingUnit.label})',
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 14),
-            ],
           ],
         );
       },

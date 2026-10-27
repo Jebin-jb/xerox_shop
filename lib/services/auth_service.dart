@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart' as cf;
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
@@ -146,9 +148,56 @@ class AuthService {
       }
       _currentUser = AppUser(uid: uid, email: email);
       _authController.add(_currentUser);
+      final prof = _profiles[uid];
+      if (prof != null) {
+        _syncFirebaseAuth(email, '1234', prof.role, prof.name, prof.studentId);
+      }
     } else {
       _currentUser = null;
       _authController.add(null);
+    }
+  }
+
+  Future<void> _syncFirebaseAuth(
+    String email,
+    String password,
+    String role,
+    String name,
+    String studentId,
+  ) async {
+    try {
+      fb_auth.UserCredential? cred;
+      try {
+        cred = await fb_auth.FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      } catch (_) {
+        try {
+          cred = await fb_auth.FirebaseAuth.instance
+              .createUserWithEmailAndPassword(email: email, password: password);
+        } catch (_) {
+          try {
+            cred = await fb_auth.FirebaseAuth.instance.signInAnonymously();
+          } catch (_) {}
+        }
+      }
+
+      final fbUser = cred?.user ?? fb_auth.FirebaseAuth.instance.currentUser;
+      if (fbUser != null) {
+        await cf.FirebaseFirestore.instance
+            .collection('users')
+            .doc(fbUser.uid)
+            .set({
+              'role': role,
+              'email': email,
+              'name': name,
+              'studentId': studentId,
+              'updatedAt': cf.FieldValue.serverTimestamp(),
+            }, cf.SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint('Firebase Auth sync notice: $e');
     }
   }
 
@@ -170,6 +219,36 @@ class AuthService {
       await prefs.setString('session_email', normalized);
       await prefs.setString('session_uid', uid);
       _authController.add(_currentUser);
+      final prof = _profiles[uid];
+      if (prof != null) {
+        _syncFirebaseAuth(
+          normalized,
+          password,
+          prof.role,
+          prof.name,
+          prof.studentId,
+        );
+        if (SupabaseConfig.isConfigured) {
+          try {
+            await sb.Supabase.instance.client.auth.signInWithPassword(
+              email: normalized,
+              password: password,
+            );
+          } catch (_) {
+            try {
+              await sb.Supabase.instance.client.auth.signUp(
+                email: normalized,
+                password: password,
+                data: {
+                  'name': prof.name,
+                  'role': prof.role,
+                  'student_id': prof.studentId,
+                },
+              );
+            } catch (_) {}
+          }
+        }
+      }
       return;
     }
 
@@ -268,6 +347,15 @@ class AuthService {
     _authController.add(_currentUser);
 
     await _saveAccountsAndProfiles();
+
+    // Sync profile to Firebase Auth & Firestore
+    _syncFirebaseAuth(
+      normalized,
+      password,
+      'student',
+      name.trim(),
+      studentId.trim(),
+    );
 
     // Sync profile to Supabase 'profiles' table
     await SupabaseService().syncProfileToSupabase(profile);
@@ -369,6 +457,9 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    try {
+      await fb_auth.FirebaseAuth.instance.signOut();
+    } catch (_) {}
     if (SupabaseConfig.isConfigured) {
       try {
         await sb.Supabase.instance.client.auth.signOut();

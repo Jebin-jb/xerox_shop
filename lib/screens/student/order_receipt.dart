@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../models/app_models.dart';
 import '../../services/data_service.dart';
 import '../../services/storage_service.dart';
@@ -34,6 +35,9 @@ class OrderReceipt extends StatelessWidget {
 
       return Scaffold(
         appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_rounded),
             onPressed: () => Navigator.pop(context),
@@ -153,14 +157,17 @@ class OrderReceipt extends StatelessWidget {
                         const Divider(height: 1),
                         const SizedBox(height: 16),
 
-                        _detailRow('Pages', '${o.pages} pages'),
+                        _detailRow(
+                          'Colour Pages',
+                          '${o.calculatedColorPages} (${o.colorPagesDisplayText})',
+                        ),
+                        _detailRow(
+                          'B&W Pages',
+                          '${o.calculatedBwPages} (${o.bwPagesDisplayText})',
+                        ),
                         _detailRow(
                           'Copies',
                           '${o.copies} ${o.copies == 1 ? "copy" : "copies"}',
-                        ),
-                        _detailRow(
-                          'Color Mode',
-                          o.color ? 'Color' : 'Black & White',
                         ),
                         _detailRow(
                           'Sides',
@@ -181,6 +188,20 @@ class OrderReceipt extends StatelessWidget {
                               : o.bindingType.name,
                         ),
                         _detailRow('Lamination', o.lamination ? 'Yes' : 'No'),
+                        if (o.priceSnapshot?['additionalServices'] is List &&
+                            (o.priceSnapshot!['additionalServices'] as List)
+                                .isNotEmpty)
+                          _detailRow(
+                            'Additional Services',
+                            (o.priceSnapshot!['additionalServices'] as List)
+                                .map(
+                                  (s) => s is Map
+                                      ? s['name']?.toString() ?? ''
+                                      : s.toString(),
+                                )
+                                .where((name) => name.isNotEmpty)
+                                .join(', '),
+                          ),
                         if (o.specialInstructions.trim().isNotEmpty)
                           _detailRow(
                             'Special Instructions',
@@ -214,7 +235,8 @@ class OrderReceipt extends StatelessWidget {
                   ),
 
                   if (o.status == OrderStatus.cancelled ||
-                      o.status == OrderStatus.rejected) ...[
+                      o.status == OrderStatus.rejected ||
+                      o.isDeletedFromQueue) ...[
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -237,7 +259,9 @@ class OrderReceipt extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                'Order ${orderStatusLabel(o.status)}',
+                                o.isDeletedFromQueue
+                                    ? 'Removed by Shopkeeper'
+                                    : 'Order ${orderStatusLabel(o.status)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 14,
@@ -246,24 +270,50 @@ class OrderReceipt extends StatelessWidget {
                               ),
                             ],
                           ),
-                          if (o.cancellationBy != null) ...[
+                          if (o.removedAt != null) ...[
                             const SizedBox(height: 6),
                             Text(
-                              'Cancelled by: ${o.cancellationBy == "SHOPKEEPER" ? "Xerox Shop" : "Student"}',
+                              'Removed on: ${DateFormat('dd/MM/yyyy hh:mm a').format(o.removedAt!)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                          if (o.cancellationBy != null &&
+                              !o.isDeletedFromQueue) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              o.status == OrderStatus.rejected
+                                  ? 'Rejected by: Xerox Shop'
+                                  : 'Cancelled by: ${o.cancellationBy == "SHOPKEEPER" ? "Xerox Shop" : "Student"}',
                               style: const TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
-                          if (o.cancellationReason != null &&
-                              o.cancellationReason!.isNotEmpty) ...[
+                          if (o.status == OrderStatus.rejected &&
+                              o.effectiveRejectionReason != null &&
+                              o.effectiveRejectionReason!.isNotEmpty) ...[
                             const SizedBox(height: 4),
                             Text(
-                              'Reason: ${o.cancellationReason}',
+                              'Reason for Rejection: ${o.effectiveRejectionReason}',
                               style: TextStyle(
-                                fontSize: 12,
-                                color: theme.colorScheme.onSurfaceVariant,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ] else if (o.effectiveRemovalReason != null &&
+                              o.effectiveRemovalReason!.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Reason: ${o.effectiveRemovalReason}',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: theme.colorScheme.onSurface,
                               ),
                             ),
                           ],
