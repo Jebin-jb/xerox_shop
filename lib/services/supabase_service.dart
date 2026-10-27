@@ -866,7 +866,12 @@ class SupabaseService extends DataService {
             updates['isDownloaded'] ?? updates['is_downloaded'];
       }
       if (updates.containsKey('isPurged') || updates.containsKey('is_purged')) {
-        pgUpdates['is_purged'] = updates['isPurged'] ?? updates['is_purged'];
+        final purgedVal = updates['isPurged'] ?? updates['is_purged'];
+        pgUpdates['is_purged'] = purgedVal;
+        if (purgedVal == true) {
+          pgUpdates['is_deleted_from_queue'] = true;
+          pgUpdates['file_url'] = '';
+        }
       }
       if (updates.containsKey('fileUrl') || updates.containsKey('file_url')) {
         pgUpdates['file_url'] = updates['fileUrl'] ?? updates['file_url'] ?? '';
@@ -880,8 +885,13 @@ class SupabaseService extends DataService {
       }
       if (updates.containsKey('isDeletedFromQueue') ||
           updates.containsKey('is_deleted_from_queue')) {
-        pgUpdates['is_deleted_from_queue'] =
+        final delVal =
             updates['isDeletedFromQueue'] ?? updates['is_deleted_from_queue'];
+        pgUpdates['is_deleted_from_queue'] = delVal;
+        if (delVal == true) {
+          pgUpdates['is_purged'] = true;
+          pgUpdates['file_url'] = '';
+        }
       }
       if (updates.containsKey('originalFileName') ||
           updates.containsKey('original_file_name')) {

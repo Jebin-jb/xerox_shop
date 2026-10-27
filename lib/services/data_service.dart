@@ -479,12 +479,20 @@ class DataService {
     final existing = _orders[id];
     if (existing == null) return;
 
+    final isNowPurgedOrDeleted =
+        changes['isPurged'] == true ||
+        changes['is_purged'] == true ||
+        changes['isDeletedFromQueue'] == true ||
+        changes['is_deleted_from_queue'] == true;
+
     _orders[id] = existing.copyWith(
-      fileUrl: changes.containsKey('fileUrl')
-          ? changes['fileUrl']?.toString() ?? ''
-          : (changes.containsKey('file_url')
-                ? changes['file_url']?.toString() ?? ''
-                : existing.fileUrl),
+      fileUrl: isNowPurgedOrDeleted
+          ? ''
+          : (changes.containsKey('fileUrl')
+                ? changes['fileUrl']?.toString() ?? ''
+                : (changes.containsKey('file_url')
+                      ? changes['file_url']?.toString() ?? ''
+                      : existing.fileUrl)),
       paymentMode: changes.containsKey('paymentMode')
           ? _enum(
               changes['paymentMode'],
@@ -524,11 +532,13 @@ class DataService {
           : (changes.containsKey('is_downloaded')
                 ? changes['is_downloaded'] == true
                 : existing.isDownloaded),
-      isPurged: changes.containsKey('isPurged')
-          ? changes['isPurged'] == true
-          : (changes.containsKey('is_purged')
-                ? changes['is_purged'] == true
-                : existing.isPurged),
+      isPurged: isNowPurgedOrDeleted
+          ? true
+          : (changes.containsKey('isPurged')
+                ? changes['isPurged'] == true
+                : (changes.containsKey('is_purged')
+                      ? changes['is_purged'] == true
+                      : existing.isPurged)),
       cancellationReason: changes.containsKey('cancellationReason')
           ? changes['cancellationReason']?.toString()
           : (changes.containsKey('cancellation_reason')
@@ -548,11 +558,13 @@ class DataService {
           : (changes.containsKey('refund_status')
                 ? changes['refund_status']?.toString()
                 : existing.refundStatus),
-      isDeletedFromQueue: changes.containsKey('isDeletedFromQueue')
-          ? changes['isDeletedFromQueue'] == true
-          : (changes.containsKey('is_deleted_from_queue')
-                ? changes['is_deleted_from_queue'] == true
-                : existing.isDeletedFromQueue),
+      isDeletedFromQueue: isNowPurgedOrDeleted
+          ? true
+          : (changes.containsKey('isDeletedFromQueue')
+                ? changes['isDeletedFromQueue'] == true
+                : (changes.containsKey('is_deleted_from_queue')
+                      ? changes['is_deleted_from_queue'] == true
+                      : existing.isDeletedFromQueue)),
       isDeletedByStudent: changes.containsKey('isDeletedByStudent')
           ? changes['isDeletedByStudent'] == true
           : (changes.containsKey('is_deleted_by_student')

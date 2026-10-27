@@ -95,10 +95,14 @@ class OrderCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               StatusChip(
-                label: order.isDeletedFromQueue
+                label:
+                    (order.isDeletedFromQueue &&
+                        order.status != OrderStatus.completed)
                     ? 'REMOVED BY SHOPKEEPER'
                     : orderStatusLabel(order.status).toUpperCase(),
-                color: order.isDeletedFromQueue
+                color:
+                    (order.isDeletedFromQueue &&
+                        order.status != OrderStatus.completed)
                     ? const Color(0xFFD32F2F)
                     : statusColor(order.status),
               ),
@@ -243,7 +247,8 @@ class OrderCard extends StatelessWidget {
                 ],
               ),
             ),
-          ] else if (order.isDeletedFromQueue) ...[
+          ] else if (order.isDeletedFromQueue &&
+              order.status != OrderStatus.completed) ...[
             const SizedBox(height: 10),
             Container(
               width: double.infinity,

@@ -47,7 +47,7 @@ class _ShopOrdersState extends State<ShopOrders> {
       initialData: widget.dataService.allOrdersDirect,
       builder: (context, snap) {
         var orders = (snap.data ?? [])
-            .where((x) => !x.isDeletedFromQueue)
+            .where((x) => !x.isDeletedFromQueue && !x.isPurged)
             .toList();
         final q = search.text.trim().toUpperCase();
         if (q.isNotEmpty) {
@@ -721,92 +721,58 @@ class _ShopOrdersState extends State<ShopOrders> {
       return;
     }
 
-    final reasonController = TextEditingController();
-    String? validationError;
-
-    // Ask for confirmation and require a removal reason before removing
-    final removalReason = await showDialog<String>(
+    // Confirmation dialog without reason text field (Task 1: Completed Orders Bin Deletion)
+    final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
-          icon: const Icon(
-            Icons.delete_forever_rounded,
-            color: Colors.redAccent,
-            size: 38,
-          ),
-          title: Text(
-            'Remove Order #${o.code} from Queue?',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Remove document "${o.fileName}" and Order #${o.code} from active queue?',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '• The document file will be deleted from storage.\n'
-                  '• The order will be removed from your active queue.\n'
-                  '• The student will be able to see this reason in their order history.\n'
-                  '• Payment and financial records (₹${o.total.toStringAsFixed(2)}) will be safely retained in reports and history.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.45,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: reasonController,
-                  autofocus: true,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText: 'Reason for removing this order',
-                    hintText:
-                        'e.g. Completed & collected, or duplicate submission',
-                    errorText: validationError,
-                    border: const OutlineInputBorder(),
-                  ),
-                  onChanged: (text) {
-                    if (validationError != null && text.trim().isNotEmpty) {
-                      setDlgState(() => validationError = null);
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, null),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-              onPressed: () {
-                final text = reasonController.text.trim();
-                if (text.isEmpty) {
-                  setDlgState(() {
-                    validationError =
-                        'Please enter a reason for removing this order.';
-                  });
-                  return;
-                }
-                Navigator.pop(ctx, text);
-              },
-              child: const Text('Confirm Removal'),
-            ),
-          ],
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(
+          Icons.delete_forever_rounded,
+          color: Colors.redAccent,
+          size: 38,
         ),
+        title: Text(
+          'Delete Order #${o.code}?',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Delete document "${o.fileName}" and remove Order #${o.code} from queue?',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '• The associated document will be permanently deleted from storage.\n'
+                '• The order will be removed from your active queue.\n'
+                '• Order history and payment records (₹${o.total.toStringAsFixed(2)}) will be safely retained in reports.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.45,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm Delete'),
+          ),
+        ],
       ),
     );
 
-    if (removalReason == null) {
+    if (confirmed != true) {
       return; // Cancelled
     }
 
@@ -853,7 +819,7 @@ class _ShopOrdersState extends State<ShopOrders> {
       }
 
       final now = DateTime.now();
-      // Remove/invalidate file reference in database record, save removal reason, while preserving order and financial records
+      // Update database state & invalidate file reference, preserving order and financial records
       await widget.dataService.updateOrder(o.id, {
         'isPurged': true,
         'is_purged': true,
@@ -861,10 +827,6 @@ class _ShopOrdersState extends State<ShopOrders> {
         'file_url': '',
         'isDeletedFromQueue': true,
         'is_deleted_from_queue': true,
-        'removalReason': removalReason,
-        'removal_reason': removalReason,
-        'cancellationReason': removalReason,
-        'cancellation_reason': removalReason,
         'removedAt': now.toIso8601String(),
         'removed_at': now.toIso8601String(),
         'removedBy': 'Shopkeeper',
@@ -881,7 +843,7 @@ class _ShopOrdersState extends State<ShopOrders> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Order #${o.code} removed from active queue. Reason saved for student.',
+                    'Order #${o.code} and document deleted from queue.',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -896,7 +858,7 @@ class _ShopOrdersState extends State<ShopOrders> {
           SnackBar(
             backgroundColor: Colors.red[800],
             duration: const Duration(seconds: 6),
-            content: Text('Error removing order: $e'),
+            content: Text('Error deleting order: $e'),
             action: SnackBarAction(
               label: 'Retry',
               textColor: Colors.white,

@@ -462,32 +462,33 @@ void main() {
         await tester.tap(find.byTooltip('Delete Document & Remove from Queue'));
         await tester.pumpAndSettle();
 
-        // 1. Verify confirmation dialog appears explaining removal and requiring a reason
+        // 1. Verify confirmation dialog appears explaining removal without reason text field (Task 1)
         expect(find.byType(AlertDialog), findsOneWidget);
-        expect(find.textContaining('Remove Order #'), findsOneWidget);
+        expect(find.textContaining('Delete Order #'), findsOneWidget);
         expect(
-          find.textContaining('Remove document "purge_me.pdf"'),
+          find.textContaining('Delete document "purge_me.pdf"'),
           findsOneWidget,
         );
         expect(
-          find.textContaining('The document file will be deleted from storage'),
+          find.textContaining(
+            'The associated document will be permanently deleted from storage',
+          ),
           findsOneWidget,
         );
         expect(
-          find.textContaining('Payment and financial records (₹20.00)'),
+          find.textContaining('Order history and payment records (₹20.00)'),
           findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextField),
+          ),
+          findsNothing,
         );
 
-        // Enter removal reason and confirm
-        final reasonField = find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.byType(TextField),
-        );
-        await tester.enterText(
-          reasonField,
-          'Printed and collected by customer',
-        );
-        await tester.tap(find.text('Confirm Removal'));
+        // Tap Confirm Delete
+        await tester.tap(find.text('Confirm Delete'));
         await tester.pumpAndSettle();
 
         // 2. Order is removed from active queue

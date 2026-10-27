@@ -319,63 +319,40 @@ void main() {
           await tester.tap(binBtn);
           await tester.pumpAndSettle();
 
-          // Verify removal dialog is displayed
-          expect(find.textContaining('from Queue?'), findsOneWidget);
-          expect(find.text('Reason for removing this order'), findsOneWidget);
-          expect(find.text('Confirm Removal'), findsOneWidget);
+          // Verify removal confirmation dialog is displayed without reason text field (Task 1)
+          expect(find.textContaining('Delete Order #'), findsOneWidget);
+          expect(find.text('Confirm Delete'), findsOneWidget);
           expect(find.text('Cancel'), findsOneWidget);
-
-          // 3. Test empty reason validation
-          await tester.tap(find.text('Confirm Removal'));
-          await tester.pumpAndSettle();
           expect(
-            find.text('Please enter a reason for removing this order.'),
-            findsOneWidget,
+            find.descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextField),
+            ),
+            findsNothing,
           );
 
-          // 4. Test whitespace-only reason validation
-          final dialogTextField = find.descendant(
-            of: find.byType(AlertDialog),
-            matching: find.byType(TextField),
-          );
-          await tester.enterText(dialogTextField, '     \n   ');
-          await tester.tap(find.text('Confirm Removal'));
-          await tester.pumpAndSettle();
-          expect(
-            find.text('Please enter a reason for removing this order.'),
-            findsOneWidget,
-          );
-
-          // 5. Enter valid removal reason and confirm
-          await tester.enterText(
-            dialogTextField,
-            'Document collected and printed in person',
-          );
-          await tester.tap(find.text('Confirm Removal'));
+          // 3. Confirm deletion
+          await tester.tap(find.text('Confirm Delete'));
           await tester.pump();
           await tester.pumpAndSettle();
 
-          // 6. Verify order is removed from the active shopkeeper queue
+          // 4. Verify order is removed from the active shopkeeper queue
           expect(find.text('remove_me_file.pdf'), findsNothing);
 
-          // 7. Verify database record persisted the removal details
+          // 5. Verify database record persisted the removal details
           final updatedOrder = ds.allOrdersDirect.firstWhere(
             (o) => o.id == orderId,
           );
           expect(updatedOrder.isDeletedFromQueue, isTrue);
           expect(updatedOrder.isPurged, isTrue);
           expect(updatedOrder.fileUrl, isEmpty);
-          expect(
-            updatedOrder.removalReason,
-            equals('Document collected and printed in person'),
-          );
           expect(updatedOrder.removedBy, equals('Shopkeeper'));
           expect(updatedOrder.removedAt, isNotNull);
           // Financial history is preserved
           expect(updatedOrder.total, equals(10.0));
           expect(updatedOrder.pages, equals(5));
 
-          // 8. Verify Student Portal renders "REMOVED BY SHOPKEEPER" and shows reason
+          // 8. Verify Student Portal renders "COMPLETED" status for completed order
           await tester.pumpWidget(
             MaterialApp(
               home: Scaffold(
@@ -385,16 +362,9 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.text('REMOVED BY SHOPKEEPER'), findsOneWidget);
-          expect(
-            find.textContaining(
-              'Reason: Document collected and printed in person',
-            ),
-            findsOneWidget,
-          );
-          expect(find.text('Removed by Shopkeeper'), findsWidgets);
+          expect(find.text('COMPLETED'), findsOneWidget);
 
-          // 9. Verify OrderReceipt displays removal reason banner
+          // 9. Verify OrderReceipt preserves completed order details
           await tester.pumpWidget(
             MaterialApp(
               home: OrderReceipt(orderId: orderId, dataService: ds),
@@ -402,11 +372,8 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.text('Removed by Shopkeeper'), findsWidgets);
-          expect(
-            find.textContaining('Document collected and printed in person'),
-            findsWidgets,
-          );
+          expect(find.text('Order Details'), findsWidgets);
+          expect(find.text('₹10.00'), findsWidgets);
         },
       );
     },

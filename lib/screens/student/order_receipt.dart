@@ -236,7 +236,8 @@ class OrderReceipt extends StatelessWidget {
 
                   if (o.status == OrderStatus.cancelled ||
                       o.status == OrderStatus.rejected ||
-                      o.isDeletedFromQueue) ...[
+                      (o.isDeletedFromQueue &&
+                          o.status != OrderStatus.completed)) ...[
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(16),

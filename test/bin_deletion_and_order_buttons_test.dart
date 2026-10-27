@@ -73,17 +73,29 @@ void main() {
         await tester.tap(binFinder);
         await tester.pumpAndSettle();
 
-        // 2. Verify confirmation dialog appears
-        expect(find.textContaining('Remove Order #'), findsOneWidget);
+        // 2. Verify confirmation dialog appears without reason text field (Task 1)
+        expect(find.textContaining('Delete Order #'), findsOneWidget);
         expect(
-          find.textContaining('The document file will be deleted from storage'),
+          find.textContaining(
+            'The associated document will be permanently deleted from storage',
+          ),
           findsOneWidget,
         );
         expect(
           find.textContaining(
-            'Payment and financial records (₹18.00) will be safely retained',
+            'Order history and payment records (₹18.00) will be safely retained',
           ),
           findsOneWidget,
+        );
+        expect(find.text('Cancel'), findsOneWidget);
+        expect(find.text('Confirm Delete'), findsOneWidget);
+        // Verify NO reason text field is shown for completed order Bin deletion
+        expect(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextField),
+          ),
+          findsNothing,
         );
 
         // Cancel first to verify it does not delete prematurely
@@ -91,53 +103,24 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('lecture_notes.pdf'), findsOneWidget);
 
-        // 3. Click Bin again and test empty reason validation
+        // 3. Click Bin again and confirm delete without requiring a reason
         await tester.tap(binFinder);
         await tester.pumpAndSettle();
 
-        // Tap Confirm Removal with empty text
-        await tester.tap(find.text('Confirm Removal'));
-        await tester.pumpAndSettle();
-        expect(
-          find.text('Please enter a reason for removing this order.'),
-          findsOneWidget,
-        );
-        expect(find.byType(AlertDialog), findsOneWidget);
-
-        // Enter whitespace-only reason
-        final reasonField = find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.byType(TextField),
-        );
-        await tester.enterText(reasonField, '    ');
-        await tester.tap(find.text('Confirm Removal'));
-        await tester.pumpAndSettle();
-        expect(
-          find.text('Please enter a reason for removing this order.'),
-          findsOneWidget,
-        );
-        expect(find.byType(AlertDialog), findsOneWidget);
-
-        // Enter valid reason
-        await tester.enterText(reasonField, 'Printed and picked up by student');
-        await tester.tap(find.text('Confirm Removal'));
+        await tester.tap(find.text('Confirm Delete'));
         await tester.pump();
         await tester.pumpAndSettle();
 
         // 4. Verify removed from active order list
         expect(find.text('lecture_notes.pdf'), findsNothing);
 
-        // 5. Verify database record updated: isPurged = true, isDeletedFromQueue = true, fileUrl is empty, removalReason saved
+        // 5. Verify database record updated: isPurged = true, isDeletedFromQueue = true, fileUrl is empty
         final deletedOrder = ds.allOrdersDirect.firstWhere(
           (o) => o.id == orderId,
         );
         expect(deletedOrder.isPurged, isTrue);
         expect(deletedOrder.isDeletedFromQueue, isTrue);
         expect(deletedOrder.fileUrl, isEmpty);
-        expect(
-          deletedOrder.removalReason,
-          equals('Printed and picked up by student'),
-        );
         expect(deletedOrder.removedAt, isNotNull);
         expect(deletedOrder.removedBy, equals('Shopkeeper'));
 
@@ -167,10 +150,9 @@ void main() {
         final studentOrder = studentOrderList.firstWhere(
           (o) => o.id == orderId,
         );
-        expect(
-          studentOrder.effectiveRemovalReason,
-          equals('Printed and picked up by student'),
-        );
+        expect(studentOrder.status, equals(OrderStatus.completed));
+        expect(studentOrder.isDeletedFromQueue, isTrue);
+        expect(studentOrder.total, equals(18.0));
       },
     );
 

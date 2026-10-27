@@ -727,7 +727,11 @@ class PrintOrder {
         d['isDeletedFromQueue'] == true ||
         d['is_deleted_from_queue'] == true ||
         d['isDeletedFromQueue'] == 'true' ||
-        d['is_deleted_from_queue'] == 'true',
+        d['is_deleted_from_queue'] == 'true' ||
+        d['isPurged'] == true ||
+        d['is_purged'] == true ||
+        d['isPurged'] == 'true' ||
+        d['is_purged'] == 'true',
     isDeletedByStudent:
         (d['isDeletedByStudent'] ?? d['is_deleted_by_student']) == true,
     removalReason: (d['removalReason'] ?? d['removal_reason'])?.toString(),

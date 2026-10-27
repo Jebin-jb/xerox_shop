@@ -551,13 +551,15 @@ class StorageService {
           SupabaseConfig.documentsBucket,
         );
         if (bucketIndex != -1 && bucketIndex < pathSegments.length - 1) {
-          return pathSegments.sublist(bucketIndex + 1).join('/');
+          final extracted = pathSegments.sublist(bucketIndex + 1).join('/');
+          return extracted.replaceFirst(RegExp(r'^/+'), '');
         }
       } else if (fileUrl.isNotEmpty && !fileUrl.startsWith('secure://')) {
-        if (fileUrl.contains('${SupabaseConfig.documentsBucket}/')) {
-          return fileUrl.split('${SupabaseConfig.documentsBucket}/').last;
+        var clean = fileUrl;
+        if (clean.contains('${SupabaseConfig.documentsBucket}/')) {
+          clean = clean.split('${SupabaseConfig.documentsBucket}/').last;
         }
-        return fileUrl;
+        return clean.replaceFirst(RegExp(r'^/+'), '');
       }
     } catch (_) {}
     return null;

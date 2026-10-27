@@ -118,8 +118,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // 3. Verify ONLY pending order appears in the Pending Orders section
-      final pendingOrder =
-          ds.allOrdersDirect.firstWhere((o) => o.id == pendingId);
+      final pendingOrder = ds.allOrdersDirect.firstWhere(
+        (o) => o.id == pendingId,
+      );
       expect(find.text('pending_notes.pdf'), findsOneWidget);
       expect(find.text('Code: #${pendingOrder.code}'), findsOneWidget);
 
@@ -410,23 +411,23 @@ void main() {
         final binFinder = find.byTooltip('Delete Document & Remove from Queue');
         expect(binFinder, findsOneWidget);
 
-        // 2. Click Bin -> Confirmation dialog appears
+        // 2. Click Bin -> Confirmation dialog appears without reason text field (Task 1)
         await tester.tap(binFinder);
         await tester.pumpAndSettle();
 
-        expect(find.textContaining('Remove Order #'), findsOneWidget);
-        expect(find.text('Reason for removing this order'), findsOneWidget);
+        expect(find.textContaining('Delete Order #'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextField),
+          ),
+          findsNothing,
+        );
+        expect(find.text('Cancel'), findsOneWidget);
+        expect(find.text('Confirm Delete'), findsOneWidget);
 
-        // 3. Confirm deletion with reason
-        final binDialogTextField = find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.byType(TextField),
-        );
-        await tester.enterText(
-          binDialogTextField,
-          'Printed, collected, and customer confirmed',
-        );
-        await tester.tap(find.text('Confirm Removal'));
+        // 3. Confirm deletion
+        await tester.tap(find.text('Confirm Delete'));
         await tester.pumpAndSettle();
 
         // 4. Verify order is removed from the active queue in UI
@@ -439,10 +440,6 @@ void main() {
         expect(orderAfterBin.isPurged, isTrue);
         expect(orderAfterBin.fileUrl, isEmpty);
         expect(orderAfterBin.isDeletedFromQueue, isTrue);
-        expect(
-          orderAfterBin.effectiveRemovalReason,
-          'Printed, collected, and customer confirmed',
-        );
 
         // Financial records remain safe
         expect(orderAfterBin.total, 6.0);

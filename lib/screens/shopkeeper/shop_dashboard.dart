@@ -28,11 +28,14 @@ class ShopDashboard extends StatelessWidget {
     builder: (context, snap) {
       final allOrders = snap.data ?? dataService.allOrdersDirect;
       final activeOrders = allOrders
-          .where((x) => !x.isDeletedFromQueue)
+          .where((x) => !x.isDeletedFromQueue && !x.isPurged)
           .toList();
       final pendingOrders = allOrders
           .where(
-            (x) => !x.isDeletedFromQueue && x.status == OrderStatus.pending,
+            (x) =>
+                !x.isDeletedFromQueue &&
+                !x.isPurged &&
+                x.status == OrderStatus.pending,
           )
           .toList();
       final today = DateTime.now();
